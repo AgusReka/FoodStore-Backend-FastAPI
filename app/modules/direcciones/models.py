@@ -14,8 +14,7 @@ class DireccionEntrega(SQLModel, table=True):
     __tablename__ = "direccion"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    #FK - Usuario
-    usuario_id: int = Field(foreign_key="usuario.id", nullable=False)
+    usuario_id: int = Field(nullable=False)
     # Alias para identificar la dirección (Casa, Trabajo, etc.)
     alias: str = Field(
         max_length=50,

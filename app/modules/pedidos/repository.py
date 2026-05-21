@@ -61,7 +61,7 @@ class HistorialEstadoPedidoRepository(BaseRepository[HistorialEstadoPedido]):
             self.session.exec(
                 select(HistorialEstadoPedido)
                 .where(HistorialEstadoPedido.pedido_id == pedido_id)
-                .order_by(HistorialEstadoPedido.fecha_cambio.desc())
+                .order_by(HistorialEstadoPedido.created_at.desc())
             ).all()
         )
         

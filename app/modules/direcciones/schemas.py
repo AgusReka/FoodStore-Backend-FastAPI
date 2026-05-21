@@ -34,7 +34,6 @@ class DireccionEntregaPublic(DireccionEntregaBase):
     id: int
     usuario_id: int
     es_principal: bool
-    is_active: bool
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
