@@ -6,6 +6,9 @@ from contextlib import asynccontextmanager
 from app.modules.category.router import router as category_router
 from app.modules.ingredient.router import router as ingredient_router
 from app.modules.product.router import router as product_router
+from app.modules.pagos.router import router as pagos_router
+from app.modules.pedidos.router import router as pedidos_router
+from app.modules.direcciones.router import router as direcciones_router
 
 app = FastAPI()
 
@@ -49,4 +52,7 @@ def value_error_handler(request: Request, exc: ValueError):
 # 👇 acá lo registrás
 app.include_router(category_router, prefix="/categories", tags=["Category"])
 app.include_router(ingredient_router, prefix="/ingredients", tags=["Ingredient"])
+app.include_router(pagos_router, prefix="/pagos", tags=["Pago"])
+app.include_router(pedidos_router, prefix="/pedidos", tags=["Pedido"])
+app.include_router(direcciones_router, prefix="/direcciones", tags=["Direccion"])
 app.include_router(product_router, prefix="/products", tags=["Product"])
