@@ -1,4 +1,7 @@
 # app/modules/ingredientes/router.py
+from app.core.deps import require_role
+from app.modules.user.models import User
+from sqlalchemy.sql.annotation import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
@@ -25,13 +28,14 @@ def get_ingredient_service(
 
 
 @router.post(
-    "/",
+    "/crear",
     response_model=IngredientPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Crear un ingrediente",
 )
 def create_ingredient(
     data: IngredientCreate,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientPublic:
     """Router delega al servicio — sin lógica de negocio aquí."""
@@ -64,13 +68,14 @@ def get_ingredient(
 
 
 @router.patch(
-    "/{ingredient_id}",
+    "/actualizar/{ingredient_id}",
     response_model=IngredientPublic,
     summary="Actualización parcial de ingrediente",
 )
 def update_ingredient(
     ingredient_id: int,
     data: IngredientUpdate,
+    _roles  : Annotated[User, Depends(require_role(["ADMIN","STOCK"]))],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientPublic:
     return svc.update(ingredient_id, data)
@@ -83,18 +88,20 @@ def update_ingredient(
 )
 def activate_ingredient(
     ingredient_id: int,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> None:
     svc.soft_activate(ingredient_id)
 
 
 @router.delete(
-    "/{ingredient_id}",
+    "/borrar/{ingredient_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft delete de ingrediente",
 )
 def delete_ingredient(
     ingredient_id: int,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> None:
     svc.soft_delete(ingredient_id)

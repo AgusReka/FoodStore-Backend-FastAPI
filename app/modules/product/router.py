@@ -1,4 +1,7 @@
 # app/modules/productes/router.py
+from app.core.deps import require_role
+from app.modules.user.models import User
+from sqlalchemy.sql.annotation import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
@@ -23,13 +26,14 @@ def get_product_service(session: Session = Depends(get_session)) -> ProductServi
 
 
 @router.post(
-    "/",
+    "/crear",
     response_model=ProductPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Crear un producto",
 )
 def create_product(
     data: ProductCreate,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: ProductService = Depends(get_product_service),
 ) -> ProductPublic:
     """Router delega al servicio — sin lógica de negocio aquí."""
@@ -37,13 +41,14 @@ def create_product(
 
 
 @router.patch(
-    "/{product_id}",
+    "/actualizar/{product_id}",
     response_model=ProductPublic,
     summary="Actualización parcial de producto",
 )
 def update(
     product_id: int,
     data: ProductUpdate,
+    _roles: Annotated[User, Depends(require_role(["ADMIN","STOCK"]))],
     svc: ProductService = Depends(get_product_service),
 ) -> ProductPublic:
     return svc.update(product_id, data)
@@ -75,12 +80,13 @@ def get_product(
 
 
 @router.delete(
-    "/{product_id}",
+    "/borrar/{product_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft delete de producto",
 )
 def delete_product(
     product_id: int,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: ProductService = Depends(get_product_service),
 ) -> None:
     svc.soft_delete(product_id)
@@ -93,6 +99,7 @@ def delete_product(
 )
 def activate_product(
     product_id: int,
+    _roles: Annotated[User, Depends(require_role(["ADMIN","STOCK"]))],
     svc: ProductService = Depends(get_product_service),
 ) -> None:
     svc.soft_activate(product_id)

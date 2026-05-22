@@ -1,4 +1,7 @@
 # app/modules/categoryes/router.py
+from app.core.deps import require_role
+from app.modules.user.models import User
+from sqlalchemy.sql.annotation import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
@@ -23,13 +26,14 @@ def get_category_service(session: Session = Depends(get_session)) -> CategorySer
 
 
 @router.post(
-    "/",
+    "/crear",
     response_model=CategoryPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Crear una categoria",
 )
 def create_category(
     data: CategoryCreate,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: CategoryService = Depends(get_category_service),
 ) -> CategoryPublic:
     """Router delega al servicio — sin lógica de negocio aquí."""
@@ -62,13 +66,14 @@ def get_category(
 
 
 @router.patch(
-    "/{category_id}",
+    "actualizar/{category_id}",
     response_model=CategoryPublic,
     summary="Actualización parcial de categoria",
 )
 def update_category(
     category_id: int,
     data: CategoryUpdate,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: CategoryService = Depends(get_category_service),
 ) -> CategoryPublic:
     return svc.update(category_id, data)
@@ -81,18 +86,20 @@ def update_category(
 )
 def activate_category(
     category_id: int,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: CategoryService = Depends(get_category_service),
 ) -> None:
     svc.soft_activate(category_id)
 
 
 @router.delete(
-    "/{category_id}",
+    "borrar/{category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft delete de categoria",
 )
 def delete_category(
     category_id: int,
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: CategoryService = Depends(get_category_service),
 ) -> None:
     svc.soft_delete(category_id)

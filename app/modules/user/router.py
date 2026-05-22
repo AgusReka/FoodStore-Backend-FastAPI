@@ -82,7 +82,7 @@ def read_me(
     return current_user
 
 
-@router.get("/privado")
+"""@router.get("/privado")
 def ruta_privada(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
@@ -90,12 +90,12 @@ def ruta_privada(
     return {
         "mensaje": f"¡Hola, {current_user.full_name}! Accediste a una ruta privada.",
         "roles": roles_codigos,
-    }
+    }"""
 
 
 # ─── Rutas de administración (RBAC) ──────────────────────────────────────────
 
-@router.get("/admin/Users", response_model=list[UserPublic])
+@router.get("/admin/users", response_model=list[UserPublic])
 def list_users(
     _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     service: Annotated[UserService, Depends(get_user_service)],
@@ -103,7 +103,7 @@ def list_users(
     return service.list_all()
 
 
-@router.post("/admin/Users/{user_id}/desactivar", response_model=UserPublic)
+@router.post("/admin/users/desactivar/{user_id}", response_model=UserPublic)
 def deactivate_user(
     user_id: int,
     _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
@@ -112,7 +112,7 @@ def deactivate_user(
     return service.set_disabled(user_id, disabled=True)
 
 
-@router.post("/admin/Users/{user_id}/activar", response_model=UserPublic)
+@router.post("/admin/users/activar/{user_id}", response_model=UserPublic)
 def activate_user(
     user_id: int,
     _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
@@ -122,7 +122,7 @@ def activate_user(
 
 # ─── Gestión de roles ─────────────────────────────────────────────────────────
 
-@router.get("/admin/users/{user_id}/roles", response_model=list[UsuarioRolPublic])
+@router.get("/admin/users/roles/{user_id}", response_model=list[UsuarioRolPublic])
 def get_roles(
     user_id: int,
     _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
@@ -131,7 +131,7 @@ def get_roles(
     return service.get_roles(user_id)
 
 
-@router.post("/admin/users/{user_id}/roles",
+@router.post("/admin/users/asignar/{user_id}",
              response_model=UsuarioRolPublic, status_code=status.HTTP_201_CREATED)
 def asignar_rol(
     user_id: int,
