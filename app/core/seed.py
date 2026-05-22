@@ -3,17 +3,24 @@ from sqlmodel import Session, select
 from app.core.database import create_db_and_tables, engine
 from app.modules.pagos.models import FormaPago
 from app.modules.pedidos.models import EstadoPedido
+from app.modules.pedidos.schemas import EstadoPedidoEnum
+
+# Importados para que create_db_and_tables() registre todas las tablas
+import app.modules.category.models  # noqa
+import app.modules.ingredient.models  # noqa
+import app.modules.product.models  # noqa
+import app.modules.direcciones.models  # noqa
 
 
 def seed_estado_pedido(db: Session):
     """Seed obligatorio: Estados del pedido."""
     estados = [
-        {"codigo": "PENDIENTE", "descripcion": "Pedido recibido, esperando confirmación", "orden": 1},
-        {"codigo": "CONFIRMADO", "descripcion": "Pago confirmado, listo para preparar", "orden": 2},
-        {"codigo": "EN_PREP", "descripcion": "En preparación en cocina", "orden": 3},
-        {"codigo": "EN_CAMINO", "descripcion": "En camino al cliente", "orden": 4},
-        {"codigo": "ENTREGADO", "descripcion": "Entregado exitosamente", "orden": 5},
-        {"codigo": "CANCELADO", "descripcion": "Pedido cancelado", "orden": 6},
+        {"codigo": EstadoPedidoEnum.PENDIENTE, "descripcion": "Pedido recibido, esperando confirmación", "orden": 1},
+        {"codigo": EstadoPedidoEnum.CONFIRMADO, "descripcion": "Pago confirmado, listo para preparar", "orden": 2},
+        {"codigo": EstadoPedidoEnum.EN_PREP, "descripcion": "En preparación en cocina", "orden": 3},
+        {"codigo": EstadoPedidoEnum.EN_CAMINO, "descripcion": "En camino al cliente", "orden": 4},
+        {"codigo": EstadoPedidoEnum.ENTREGADO, "descripcion": "Entregado exitosamente", "orden": 5},
+        {"codigo": EstadoPedidoEnum.CANCELADO, "descripcion": "Pedido cancelado", "orden": 6},
     ]
     for est in estados:
         if not db.exec(select(EstadoPedido).where(EstadoPedido.codigo == est["codigo"])).first():
