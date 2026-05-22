@@ -58,9 +58,14 @@ class Pedido(SQLModel, table=True):
         sa_column=Column(Numeric(10, 2), nullable=False),
     )
     notas_cliente: Optional[str] = Field(max_length=200, default=None)
+    #fecha_entrega_estimada: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     deleted_at: Optional[datetime] = Field(default=None)
+
+    @property
+    def estado_codigo(self) -> Optional[EstadoPedidoEnum]:
+        return self.estado_actual.codigo if self.estado_actual else None
 
     detalles: List["DetallePedido"] = Relationship(back_populates="pedido")
     historial_estados: List["HistorialEstadoPedido"] = Relationship(back_populates="pedido")
@@ -103,3 +108,11 @@ class HistorialEstadoPedido(SQLModel, table=True):
 
     pedido: Optional["Pedido"] = Relationship(back_populates="historial_estados")
     estado: Optional["EstadoPedido"] = Relationship(back_populates="historial_estados")
+
+    @property
+    def fecha_cambio(self) -> datetime:
+        return self.created_at
+
+    @property
+    def estado_codigo(self) -> Optional[str]:
+        return self.estado.codigo.value if self.estado else None

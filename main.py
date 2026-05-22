@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.database import create_db_and_tables
+from app.core.seed import run_seed
 from contextlib import asynccontextmanager
 from app.modules.category.router import router as category_router
 from app.modules.ingredient.router import router as ingredient_router
@@ -15,7 +15,7 @@ app = FastAPI()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_db_and_tables()
+    run_seed()
     yield
 
 
@@ -52,7 +52,7 @@ def value_error_handler(request: Request, exc: ValueError):
 # 👇 acá lo registrás
 app.include_router(category_router, prefix="/categories", tags=["Category"])
 app.include_router(ingredient_router, prefix="/ingredients", tags=["Ingredient"])
-app.include_router(pagos_router, prefix="/pagos", tags=["Pago"])
-app.include_router(pedidos_router, prefix="/pedidos", tags=["Pedido"])
-app.include_router(direcciones_router, prefix="/direcciones", tags=["Direccion"])
+app.include_router(pagos_router, prefix="/pagos", tags=["Formas de Pago"])
+app.include_router(pedidos_router, prefix="/pedidos", tags=["Pedidos"])
+app.include_router(direcciones_router, prefix="/direcciones", tags=["Direcciones"])
 app.include_router(product_router, prefix="/products", tags=["Product"])

@@ -22,7 +22,6 @@ class PedidoService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    # ── Creación (transacción atómica) ─────────────────────────────────────
 
     def crear_pedido(self, usuario_id: int, pedido_in: PedidoCreate) -> Pedido:
         with OrderUnitOfWork(self._session) as uow:
@@ -100,7 +99,6 @@ class PedidoService:
 
             return pedido
 
-    # ── Lecturas ───────────────────────────────────────────────────────────
 
     def get_pedido_by_id(
         self, pedido_id: int, usuario_id: Optional[int] = None, es_admin: bool = False
@@ -135,7 +133,6 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             return uow.pedidos.get_all_admin(estado_id, offset, limit)
 
-    # ── Cambio de estado ───────────────────────────────────────────────────
 
     TRANSICIONES_VALIDAS = {
         EstadoPedidoEnum.PENDIENTE: [EstadoPedidoEnum.CONFIRMADO, EstadoPedidoEnum.CANCELADO],
@@ -221,6 +218,16 @@ class PedidoService:
             pedido.updated_at = datetime.now(timezone.utc)
             uow.pedidos.update(pedido.id, pedido)
 
+            # Reintegrar stock automáticamente
+            product_repo = ProductRepository(self._session)
+            for detalle in pedido.detalles:
+                producto = product_repo.get_by_id(detalle.producto_id)
+                if producto:
+                    producto.stock_quantity += detalle.cantidad
+                    if not producto.available and producto.stock_quantity > 0:
+                        producto.available = True
+                    product_repo.update(producto.id, producto)
+
             self._registrar_cambio_estado(
                 uow,
                 pedido_id=pedido.id,
@@ -260,7 +267,6 @@ class PedidoService:
             uow.pedidos.update(pedido.id, pedido)
             return pedido
 
-    # ── Helper interno ─────────────────────────────────────────────────────
 
     def _registrar_cambio_estado(
         self,
@@ -278,3 +284,19 @@ class PedidoService:
             observaciones=observaciones,
         )
         uow.historial.create(historial)
+
+    def count_pedidos_by_usuario(self, usuario_id: int) -> int:
+        with OrderUnitOfWork(self._session) as uow:
+            return uow.pedidos.count_by_usuario(usuario_id)
+
+    def count_pedidos_admin(self, estado_id: Optional[int] = None) -> int:
+        with OrderUnitOfWork(self._session) as uow:
+            return uow.pedidos.count_admin(estado_id)
+
+    def get_estados_pedido_ordered(self):
+        with OrderUnitOfWork(self._session) as uow:
+            return uow.estados.get_all_ordered()
+
+    def get_historial_estados(self, pedido_id: int) -> List[HistorialEstadoPedido]:
+        with OrderUnitOfWork(self._session) as uow:
+            return uow.historial.get_by_pedido_id(pedido_id)

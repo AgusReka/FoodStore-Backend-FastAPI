@@ -32,7 +32,8 @@ class DireccionEntrega(SQLModel, table=True):
     )
     ciudad: str = Field(max_length=50, nullable=False)
     provincia: str = Field(max_length=50, nullable=False)
-    codigo_postal: str = Field(max_length=20, nullable=False)
+    codigo_postal: Optional[str] = Field(default=None, max_length=20, nullable=True)
+    #referencias: Optional[str] = Field(default=None, max_length=500, description="Referencias adicionales")
     # Coordenadas (opcional para mapas)
     latitud: Optional[float] = None
     longitud: Optional[float] = None

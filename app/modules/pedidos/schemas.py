@@ -68,7 +68,7 @@ class PedidoPublic(PedidoBase):
     subtotal: Decimal
     costo_envio: Decimal
     total: Decimal
-    fecha_entrega_estimada: Optional[datetime] = None
+    #fecha_entrega_estimada: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

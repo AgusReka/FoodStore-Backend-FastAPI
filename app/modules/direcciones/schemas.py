@@ -27,7 +27,7 @@ class DireccionEntregaUpdate(SQLModel):
     codigo_postal: Optional[str] = Field(default=None, max_length=20)
     latitud: Optional[float] = None
     longitud: Optional[float] = None
-    referencias: Optional[str] = Field(default=None, max_length=500)
+    #referencias: Optional[str] = Field(default=None, max_length=500)
     es_principal: Optional[bool] = None
     
 class DireccionEntregaPublic(DireccionEntregaBase):

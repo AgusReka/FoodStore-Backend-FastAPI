@@ -14,6 +14,10 @@ class DireccionesService:
         with AddressUnitOfWork(self._session) as uow:
             return uow.direcciones.get_by_usuario_id(usuario_id, offset, limit)
 
+    def count_direcciones_by_usuario(self, usuario_id: int) -> int:
+        with AddressUnitOfWork(self._session) as uow:
+            return uow.direcciones.count_by_usuario(usuario_id)
+
     def get_direccion_by_id(self, direccion_id: int, usuario_id: int) -> DireccionEntrega:
         with AddressUnitOfWork(self._session) as uow:
             direccion = uow.direcciones.get(direccion_id)
