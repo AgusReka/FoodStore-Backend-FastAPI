@@ -1,24 +1,13 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime, timezone
-from enum import Enum
 from decimal import Decimal
 from sqlalchemy import Column, Numeric, Enum as SQLEnum
-import enum
-from typing import TYPE_CHECKING
+from app.modules.pedidos.schemas import EstadoPedidoEnum
 
 if TYPE_CHECKING:
     from app.modules.direcciones.models import DireccionEntrega
     from app.modules.pagos.models import FormaPago
-
-
-class EstadoPedidoEnum(str, Enum):
-    PENDIENTE = "PENDIENTE"
-    CONFIRMADO = "CONFIRMADO"
-    EN_PREP = "EN_PREP"
-    EN_CAMINO = "EN_CAMINO"
-    ENTREGADO = "ENTREGADO"
-    CANCELADO = "CANCELADO"
 
 
 class EstadoPedido(SQLModel, table=True):

@@ -26,6 +26,16 @@ class FormaPagoRepository(BaseRepository[FormaPago]):
             select(FormaPago).where(FormaPago.nombre == nombre)
         ).first()
     
-    def count(self) -> int:
-        """Cuenta todas las formas de pago."""
-        return len(self.session.exec(select(FormaPago)).all())
+    def get_all(self, offset: int = 0, limit: int = 20, include_deleted: bool = False) -> List[FormaPago]:
+        """Lista formas de pago, excluyendo soft-deleted por defecto."""
+        query = select(FormaPago)
+        if not include_deleted:
+            query = query.where(FormaPago.deleted_at.is_(None))
+        return list(self.session.exec(query.offset(offset).limit(limit)).all())
+
+    def count(self, include_deleted: bool = False) -> int:
+        """Cuenta formas de pago respetando el filtro de soft delete."""
+        query = select(FormaPago)
+        if not include_deleted:
+            query = query.where(FormaPago.deleted_at.is_(None))
+        return len(self.session.exec(query).all())

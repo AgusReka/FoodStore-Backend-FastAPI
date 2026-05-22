@@ -10,10 +10,10 @@ class FormaPagoService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get_all(self, offset: int = 0, limit: int = 20) -> FormaPagoList:
+    def get_all(self, offset: int = 0, limit: int = 20, include_deleted: bool = False) -> FormaPagoList:
         with PaymentUnitOfWork(self._session) as uow:
-            formas_pago = list(uow.formas_pago.get_all(offset=offset, limit=limit))
-            total = uow.formas_pago.count()
+            formas_pago = list(uow.formas_pago.get_all(offset=offset, limit=limit, include_deleted=include_deleted))
+            total = uow.formas_pago.count(include_deleted=include_deleted)
             return FormaPagoList(data=formas_pago, total=total)
 
     def get_forma_pago_by_id(self, forma_pago_id: int) -> FormaPago:
@@ -74,12 +74,4 @@ class FormaPagoService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Forma de pago ID {forma_pago_id} no encontrada",
                 )
-            if self._hay_pedidos_asociados(forma_pago_id):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="No se puede eliminar esta forma de pago porque hay pedidos asociados.",
-                )
             uow.formas_pago.delete(forma_pago_id)
-
-    def _hay_pedidos_asociados(self, forma_pago_id: int) -> bool:
-        return False

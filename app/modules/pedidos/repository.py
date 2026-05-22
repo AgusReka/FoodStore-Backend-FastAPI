@@ -7,8 +7,8 @@ from app.modules.pedidos.models import (
     DetallePedido,
     EstadoPedido,
     HistorialEstadoPedido,
-    EstadoPedidoEnum
 )
+from app.modules.pedidos.schemas import EstadoPedidoEnum
 
 class EstadoPedidoRepository(BaseRepository[EstadoPedido]):
     """Repository para estados de pedido (tabla de referencia)."""

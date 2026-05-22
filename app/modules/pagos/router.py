@@ -32,9 +32,10 @@ def get_forma_pago_service(session: Session = Depends(get_session)) -> FormaPago
 def list_formas_pago(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    include_deleted: bool = Query(default=False, description="Incluir registros eliminados (solo admin)"),
     svc: FormaPagoService = Depends(get_forma_pago_service),
 ) -> FormaPagoList:
-    return svc.get_all(offset=offset, limit=limit)
+    return svc.get_all(offset=offset, limit=limit, include_deleted=include_deleted)
 
 @router.get(
     "/{forma_pago_id}",

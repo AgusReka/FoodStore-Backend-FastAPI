@@ -8,12 +8,12 @@ from app.modules.pedidos.models import (
     Pedido,
     DetallePedido,
     HistorialEstadoPedido,
-    EstadoPedidoEnum,
 )
 from app.modules.pedidos.schemas import (
     PedidoCreate,
     PedidoUpdate,
     CambioEstadoRequest,
+    EstadoPedidoEnum,
 )
 from app.modules.product.repository import ProductRepository
 
