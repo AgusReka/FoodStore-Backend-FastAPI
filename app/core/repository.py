@@ -20,6 +20,12 @@ class BaseRepository(Generic[ModelT]):
         self.session.flush()  # obtiene el ID sin hacer commit
         self.session.refresh(instance)
         return instance
+    
+    def update(self, instance: ModelT) -> ModelT:
+        self.session.add(instance)
+        self.session.flush()
+        self.session.refresh(instance)
+        return instance
 
     def delete(self, instance: ModelT) -> None:
         self.session.delete(instance)

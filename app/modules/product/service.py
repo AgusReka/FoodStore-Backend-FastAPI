@@ -31,13 +31,13 @@ class ProductService:
     # ── Helpers privados ──────────────────────────────────────────────────────
 
     def _get_or_404(self, uow: ProductUnitOfWork, product_id: int) -> Product:
-        product = uow.product.get_by_id(product_id)
+        product = uow.products.get_by_id(product_id)
         if not product:
             raise ValueError(f"Product con id={product_id} no encontrado")
         return product
 
     def _assert_name_unique(self, uow: ProductUnitOfWork, name: str) -> None:
-        if uow.product.get_by_name(name):
+        if uow.products.get_by_name(name):
             raise ValueError(f"El name '{name}' ya está en uso")
 
     def _validate_and_get_categories(
@@ -61,7 +61,7 @@ class ProductService:
             raise ValueError("Solo puede haber una categoría primaria")
 
         # traer de DB
-        db_categories = uow.category.get_all_in(ids)
+        db_categories = uow.categories.get_all_in(ids)
         db_map = {c.id: c for c in db_categories}
 
         missing = set(ids) - db_map.keys()
@@ -84,7 +84,7 @@ class ProductService:
             raise ValueError("No se permiten ingredientes duplicados")
 
         # traer de DB
-        db_ingredients = uow.ingredient.get_all_in(ids)
+        db_ingredients = uow.ingredients.get_all_in(ids)
         db_map = {ing.id: ing for ing in db_ingredients}
 
         missing = set(ids) - db_map.keys()
@@ -114,11 +114,11 @@ class ProductService:
                 available=data.available,
             )
 
-            uow.product.add(product)
+            uow.products.add(product)
 
             # 🔗 crear relaciones - categorías
             for cat in data.categories:
-                uow.product.add_category(
+                uow.products.add_category(
                     ProductCategoryLink(
                         product_id=product.id,
                         category_id=cat.id,
@@ -128,7 +128,7 @@ class ProductService:
 
             # 🔗 crear relaciones - ingredientes
             for ing in data.ingredients:
-                uow.product.add_ingredient(
+                uow.products.add_ingredient(
                     ProductIngredientLink(
                         product_id=product.id,
                         ingredient_id=ing.id,
@@ -174,7 +174,7 @@ class ProductService:
         uow: ProductUnitOfWork
         with ProductUnitOfWork(self._session) as uow:
             # 🔎 buscar producto
-            product = uow.product.get_by_id(product_id)
+            product = uow.products.get_by_id(product_id)
             if not product:
                 raise ValueError("Producto no encontrado")
 
@@ -198,7 +198,7 @@ class ProductService:
                 category_map = self._validate_and_get_categories(uow, categories)
 
                 # actuales
-                current_links = uow.product.get_category_links(product.id)
+                current_links = uow.products.get_category_links(product.id)
                 current_map = {l.category_id: l for l in current_links}
 
                 # nuevas
@@ -209,12 +209,12 @@ class ProductService:
 
                 # 🗑️ eliminar
                 for cat_id in current_ids - new_ids:
-                    uow.product.remove_category(product.id, cat_id)
+                    uow.products.remove_category(product.id, cat_id)
 
                 # ➕ agregar
                 for cat_id in new_ids - current_ids:
                     cat = new_map[cat_id]
-                    uow.product.add_category(
+                    uow.products.add_category(
                         ProductCategoryLink(
                             product_id=product.id,
                             category_id=cat.id,
@@ -232,9 +232,9 @@ class ProductService:
 
             else:
                 # si no vienen categorías, armamos el map desde DB para response
-                current_links = uow.product.get_category_links(product.id)
+                current_links = uow.products.get_category_links(product.id)
                 category_ids = [l.category_id for l in current_links]
-                db_categories = uow.category.get_all_in(category_ids)
+                db_categories = uow.categories.get_all_in(category_ids)
                 category_map = {c.id: c for c in db_categories}
 
                 categories = [
@@ -250,7 +250,7 @@ class ProductService:
                 ingredient_map = self._validate_and_get_ingredients(uow, ingredients)
 
                 # actuales
-                current_ing_links = uow.product.get_ingredient_links(product.id)
+                current_ing_links = uow.products.get_ingredient_links(product.id)
                 current_ing_map = {l.ingredient_id: l for l in current_ing_links}
 
                 # nuevos
@@ -261,12 +261,12 @@ class ProductService:
 
                 # 🗑️ eliminar
                 for ing_id in current_ing_ids - new_ing_ids:
-                    uow.product.remove_ingredient(product.id, ing_id)
+                    uow.products.remove_ingredient(product.id, ing_id)
 
                 # ➕ agregar
                 for ing_id in new_ing_ids - current_ing_ids:
                     ing = new_ing_map[ing_id]
-                    uow.product.add_ingredient(
+                    uow.products.add_ingredient(
                         ProductIngredientLink(
                             product_id=product.id,
                             ingredient_id=ing.id,
@@ -284,9 +284,9 @@ class ProductService:
 
             else:
                 # si no vienen ingredientes, armamos el map desde DB para response
-                current_ing_links = uow.product.get_ingredient_links(product.id)
+                current_ing_links = uow.products.get_ingredient_links(product.id)
                 ingredient_ids = [l.ingredient_id for l in current_ing_links]
-                db_ingredients = uow.ingredient.get_all_in(ingredient_ids)
+                db_ingredients = uow.ingredients.get_all_in(ingredient_ids)
                 ingredient_map = {ing.id: ing for ing in db_ingredients}
 
                 ingredients = [
@@ -336,15 +336,15 @@ class ProductService:
     def get_all(self, offset: int = 0, limit: int = 20) -> ProductList:
         uow: ProductUnitOfWork
         with ProductUnitOfWork(self._session) as uow:
-            products = uow.product.get_all(offset, limit)
-            total = uow.product.count()
+            products = uow.products.get_all(offset, limit)
+            total = uow.products.count()
 
             product_ids = [p.id for p in products]
 
             # 🔗 traer links (N:N) - categorías
-            category_links = uow.product.get_category_links_by_product_ids(product_ids)
+            category_links = uow.products.get_category_links_by_product_ids(product_ids)
             # 🔗 traer links (N:N) - ingredientes
-            ingredient_links = uow.product.get_ingredient_links_by_product_ids(
+            ingredient_links = uow.products.get_ingredient_links_by_product_ids(
                 product_ids
             )
 
@@ -360,12 +360,12 @@ class ProductService:
 
             # 📚 traer categorías
             category_ids = list({l.category_id for l in category_links})
-            db_categories = uow.category.get_all_in(category_ids)
+            db_categories = uow.categories.get_all_in(category_ids)
             category_map = {c.id: c for c in db_categories}
 
             # 📚 traer ingredientes
             ingredient_ids = list({l.ingredient_id for l in ingredient_links})
-            db_ingredients = uow.ingredient.get_all_in(ingredient_ids)
+            db_ingredients = uow.ingredients.get_all_in(ingredient_ids)
             ingredient_map = {ing.id: ing for ing in db_ingredients}
 
             # 🎯 armar respuesta
@@ -422,20 +422,20 @@ class ProductService:
             product = self._get_or_404(uow, product_id)
 
             # 🔗 traer links - categorías
-            category_links = uow.product.get_category_links_by_product_ids([product.id])
+            category_links = uow.products.get_category_links_by_product_ids([product.id])
             # 🔗 traer links - ingredientes
-            ingredient_links = uow.product.get_ingredient_links_by_product_ids(
+            ingredient_links = uow.products.get_ingredient_links_by_product_ids(
                 [product.id]
             )
 
             # 📚 traer categorías
             category_ids = [l.category_id for l in category_links]
-            db_categories = uow.category.get_all_in(category_ids)
+            db_categories = uow.categories.get_all_in(category_ids)
             category_map = {c.id: c for c in db_categories}
 
             # 📚 traer ingredientes
             ingredient_ids = [l.ingredient_id for l in ingredient_links]
-            db_ingredients = uow.ingredient.get_all_in(ingredient_ids)
+            db_ingredients = uow.ingredients.get_all_in(ingredient_ids)
             ingredient_map = {ing.id: ing for ing in db_ingredients}
 
             # 🎯 armar categorías
@@ -484,8 +484,8 @@ class ProductService:
             product.available = False
             product.deleted_at = datetime.now(timezone.utc)
 
-    def soft_activate(self, ingredient_id: int) -> None:
+    def soft_activate(self, product_id: int) -> None:
         with ProductUnitOfWork(self._session) as uow:
-            ingredient = self._get_or_404(uow, ingredient_id)
-            ingredient.available = True
-            ingredient.deleted_at = None
+            product = self._get_or_404(uow, product_id)
+            product.available = True
+            product.deleted_at = None

@@ -1,4 +1,11 @@
 from sqlmodel import Session
+from fastapi import Depends
+
+from app.modules.user.repository import UserRepository
+from app.modules.category.repository import CategoryRepository
+from app.modules.ingredient.repository import IngredientRepository
+from app.modules.product.repository import ProductRepository
+from app.core.database import get_session
 
 
 class UnitOfWork:
@@ -7,8 +14,8 @@ class UnitOfWork:
 
     Uso en servicios:
         with uow:
-            uow.heroes.add(hero)
-            uow.teams.add(team)
+            uow.users.add(user)
+            uow.categories.add(category)
         # commit automático si no hay excepción
         # rollback automático si hay excepción
 
@@ -25,6 +32,12 @@ class UnitOfWork:
                                Representa el contexto de conexión y transacción.
         """
         self._session = session
+        
+        # Inicializar repositorios
+        self.users = UserRepository(session)
+        self.categories = CategoryRepository(session)
+        self.ingredients = IngredientRepository(session)
+        self.products = ProductRepository(session)
 
     def __enter__(self) -> "UnitOfWork":
         """
@@ -64,3 +77,7 @@ class UnitOfWork:
         Ejecuta un rollback explícito de la transacción actual.
         """
         self._session.rollback()
+
+def get_uow(session: Session = Depends(get_session)) -> UnitOfWork:
+    """Dependencia FastAPI: provee un UnitOfWork por request con su Session."""
+    return UnitOfWork(session)
