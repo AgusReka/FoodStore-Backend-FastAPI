@@ -1,7 +1,7 @@
 # app/modules/ingredientes/router.py
 from app.core.deps import require_role
 from app.modules.user.models import User
-from sqlalchemy.sql.annotation import Annotated
+from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
