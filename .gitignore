@@ -8,10 +8,18 @@ __v0_jsx-dev-runtime.ts
 next.user-config.*
 
 # Environment variables
-.env*.local
+.env
+.env.local
+.env.*.local
 
 # Common ignores
 node_modules
 .next/
 .DS_Store
 venv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
