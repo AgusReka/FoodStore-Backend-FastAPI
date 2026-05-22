@@ -5,4 +5,4 @@ venv\Scripts\activate
 # Comando para instalar dependencias
 pip install -r requirements.txt
 # Comando para iniciarlo
-uvicorn app.main:app --reload
+uvicorn main:app --reload

@@ -56,5 +56,5 @@ app.include_router(pedidos_router, prefix="/api/v1/pedidos", tags=["Pedidos"])
 app.include_router(
     direcciones_router, prefix="/api/v1/direcciones", tags=["Direcciones"]
 )
-app.include_router(product_router, prefix="api/v1/products", tags=["Product"])
+app.include_router(product_router, prefix="/api/v1/products", tags=["Product"])
 app.include_router(user_router, prefix="/api/v1/auth", tags=["Auth"])
