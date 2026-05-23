@@ -27,9 +27,10 @@ class DireccionesService:
                     detail="Dirección no encontrada.",
                 )
             if direccion.usuario_id != usuario_id:
+                # Devolvemos 404 (no 403) para no revelar la existencia de un ID ajeno.
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permisos para acceder a esta dirección.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dirección no encontrada.",
                 )
             return direccion
 
@@ -57,8 +58,8 @@ class DireccionesService:
                 )
             if direccion.usuario_id != usuario_id:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permisos para modificar esta dirección.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dirección no encontrada.",
                 )
             if direccion_in.es_principal is True:
                 uow.direcciones.marcar_no_principal(usuario_id)
@@ -78,8 +79,8 @@ class DireccionesService:
                 )
             if direccion.usuario_id != usuario_id:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permisos para modificar esta dirección.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dirección no encontrada.",
                 )
             uow.direcciones.marcar_no_principal(usuario_id)
             direccion.es_principal = True
@@ -95,7 +96,7 @@ class DireccionesService:
                 )
             if direccion.usuario_id != usuario_id:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permisos para eliminar esta dirección.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dirección no encontrada.",
                 )
             uow.direcciones.delete(direccion_id)

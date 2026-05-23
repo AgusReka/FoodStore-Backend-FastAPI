@@ -1,5 +1,5 @@
 # app/modules/ingredientes/router.py
-from app.core.deps import require_role
+from app.core.deps import require_admin, require_admin_or_stock
 from app.modules.user.models import User
 from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
@@ -35,7 +35,7 @@ def get_ingredient_service(
 )
 def create_ingredient(
     data: IngredientCreate,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientPublic:
     return svc.create(data)
@@ -74,7 +74,7 @@ def get_ingredient(
 def update_ingredient(
     ingredient_id: int,
     data: IngredientUpdate,
-    _roles: Annotated[User, Depends(require_role(["ADMIN", "STOCK"]))],
+    _: Annotated[User, Depends(require_admin_or_stock)],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientPublic:
     return svc.update(ingredient_id, data)
@@ -87,7 +87,7 @@ def update_ingredient(
 )
 def activate_ingredient(
     ingredient_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> None:
     svc.soft_activate(ingredient_id)
@@ -100,7 +100,7 @@ def activate_ingredient(
 )
 def delete_ingredient(
     ingredient_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> None:
     svc.soft_delete(ingredient_id)

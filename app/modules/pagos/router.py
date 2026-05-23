@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
-from app.core.deps import require_role
+from app.core.deps import require_admin
 from app.modules.user.models import User
 from app.modules.pagos.service import FormaPagoService
 from app.modules.pagos.schemas import (
@@ -61,7 +61,7 @@ def get_forma_pago(
 )
 def create_forma_pago(
     forma_pago_in: FormaPagoCreate,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> FormaPagoPublic:
     """
@@ -82,7 +82,7 @@ def create_forma_pago(
 def update_forma_pago(
     forma_pago_id: int,
     forma_pago_in: FormaPagoUpdate,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> FormaPagoPublic:
     """Solo administradores pueden modificar formas de pago."""
@@ -100,7 +100,7 @@ def update_forma_pago(
 )
 def delete_forma_pago(
     forma_pago_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> None:
     """Solo administradores pueden eliminar formas de pago."""

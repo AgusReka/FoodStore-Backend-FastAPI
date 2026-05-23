@@ -1,5 +1,5 @@
 # app/modules/categoryes/router.py
-from app.core.deps import require_role
+from app.core.deps import require_admin
 from app.modules.user.models import User
 from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
@@ -33,7 +33,7 @@ def get_category_service(session: Session = Depends(get_session)) -> CategorySer
 )
 def create_category(
     data: CategoryCreate,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: CategoryService = Depends(get_category_service),
 ) -> CategoryPublic:
     return svc.create(data)
@@ -72,7 +72,7 @@ def get_category(
 def update_category(
     category_id: int,
     data: CategoryUpdate,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: CategoryService = Depends(get_category_service),
 ) -> CategoryPublic:
     return svc.update(category_id, data)
@@ -85,7 +85,7 @@ def update_category(
 )
 def activate_category(
     category_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: CategoryService = Depends(get_category_service),
 ) -> None:
     svc.soft_activate(category_id)
@@ -98,7 +98,7 @@ def activate_category(
 )
 def delete_category(
     category_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: CategoryService = Depends(get_category_service),
 ) -> None:
     svc.soft_delete(category_id)

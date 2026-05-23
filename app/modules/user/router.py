@@ -19,7 +19,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.core.deps import get_current_active_user, require_role
+from app.core.deps import get_current_active_user, require_admin
 from app.modules.user.models import User
 from app.modules.user.schemas import UserCreate, UserPublic, Token, AsignarRolInput, UsuarioRolPublic
 from app.modules.user.service import UserService
@@ -97,7 +97,7 @@ def ruta_privada(
 
 @router.get("/admin/users", response_model=list[UserPublic])
 def list_users(
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     service: Annotated[UserService, Depends(get_user_service)],
 ):
     return service.list_all()
@@ -106,7 +106,7 @@ def list_users(
 @router.post("/admin/users/desactivar/{user_id}", response_model=UserPublic)
 def deactivate_user(
     user_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     service: Annotated[UserService, Depends(get_user_service)],
 ):
     return service.set_disabled(user_id, disabled=True)
@@ -115,7 +115,7 @@ def deactivate_user(
 @router.post("/admin/users/activar/{user_id}", response_model=UserPublic)
 def activate_user(
     user_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     service: Annotated[UserService, Depends(get_user_service)],
 ):
     return service.set_disabled(user_id, disabled=False)
@@ -125,7 +125,7 @@ def activate_user(
 @router.get("/admin/users/roles/{user_id}", response_model=list[UsuarioRolPublic])
 def get_roles(
     user_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     service: Annotated[UserService, Depends(get_user_service)],
 ):
     return service.get_roles(user_id)
@@ -136,10 +136,10 @@ def get_roles(
 def asignar_rol(
     user_id: int,
     data: AsignarRolInput,
-    admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    current_user: Annotated[User, Depends(require_admin)],
     service: Annotated[UserService, Depends(get_user_service)],
 ):
-    return service.asignar_rol(user_id, data, asignado_por_id=admin.id)
+    return service.asignar_rol(user_id, data, asignado_por_id=current_user.id)
 
 
 @router.delete("/admin/users/{user_id}/roles/{rol_codigo}",
@@ -147,7 +147,7 @@ def asignar_rol(
 def quitar_rol(
     user_id: int,
     rol_codigo: str,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     service: Annotated[UserService, Depends(get_user_service)],
 ):
     service.quitar_rol(user_id, rol_codigo)

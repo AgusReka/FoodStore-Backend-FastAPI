@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
-from app.core.deps import get_current_active_user, require_role
+from app.core.deps import get_current_active_user, require_admin_or_pedidos
+from app.core.roles import RoleCode
 from app.modules.user.models import User
 from app.modules.pedidos.service import PedidoService
 from app.modules.pedidos.schemas import (
@@ -76,7 +77,7 @@ def list_estados_pedido(
     description="Vista administrativa: lista todos los pedidos del sistema con filtros y paginación."
 )
 def admin_list_pedidos(
-    _admin: Annotated[User, Depends(require_role(["ADMIN", "PEDIDOS"]))],
+    _: Annotated[User, Depends(require_admin_or_pedidos)],
     svc: PedidoService = Depends(get_pedido_service),
     estado_id: Optional[int] = Query(default=None, description="Filtrar por ID de estado"),
     offset: int = Query(default=0, ge=0),
@@ -135,7 +136,7 @@ def get_pedido(
     """
     # Determinar si es admin o PEDIDOS basado en los roles del token
     user_roles: list[str] = getattr(current_user, "_roles_from_token", [])
-    es_admin = "ADMIN" in user_roles or "PEDIDOS" in user_roles
+    es_admin = RoleCode.ADMIN in user_roles or RoleCode.PEDIDOS in user_roles
     return svc.get_pedido_by_id(
         pedido_id=pedido_id,
         usuario_id=current_user.id,
@@ -157,7 +158,7 @@ def get_pedido_historial(
     """Solo el dueño del pedido o roles ADMIN/PEDIDOS pueden consultarlo."""
     # Determinar si es admin o PEDIDOS basado en los roles del token
     user_roles: list[str] = getattr(current_user, "_roles_from_token", [])
-    es_admin = "ADMIN" in user_roles or "PEDIDOS" in user_roles
+    es_admin = RoleCode.ADMIN in user_roles or RoleCode.PEDIDOS in user_roles
     # Validar acceso al pedido primero
     svc.get_pedido_by_id(pedido_id, usuario_id=current_user.id, es_admin=es_admin)
     # Retornar historial
@@ -193,7 +194,7 @@ def cancelar_pedido(
 def update_pedido_estado(
     pedido_id: int,
     cambio: CambioEstadoRequest,
-    admin_user: Annotated[User, Depends(require_role(["ADMIN", "PEDIDOS"]))],
+    current_user: Annotated[User, Depends(require_admin_or_pedidos)],
     svc: PedidoService = Depends(get_pedido_service)
 ) -> PedidoPublic:
     """
@@ -204,7 +205,7 @@ def update_pedido_estado(
     return svc.cambiar_estado_pedido(
         pedido_id=pedido_id,
         cambio=cambio,
-        usuario_cambio_id=admin_user.id
+        usuario_cambio_id=current_user.id
     )
 
 

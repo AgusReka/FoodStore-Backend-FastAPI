@@ -36,6 +36,7 @@ from typing import Annotated  # Permite tipado enriquecido para Depends
 from fastapi import Depends, HTTPException, status  # Inyección y manejo de errores HTTP
 from fastapi.security import OAuth2PasswordBearer  # Manejo estándar de OAuth2 con Bearer
 
+from app.core.roles import RoleCode  # Enum de códigos de rol (fuente de verdad)
 from app.core.security import decode_access_token  # Función para decodificar JWT
 from app.core.unit_of_work import UnitOfWork, get_uow       # Patrón Unit of Work para DB
 from app.modules.user.models import User     # Modelo de dominio User
@@ -137,7 +138,7 @@ async def get_current_active_user(
     return current_user # User válido y activo
 
 
-def require_role(allowed_roles: list[str]):
+def require_role(allowed_roles: list[RoleCode]):
     """
     Factory de dependencias para control de acceso basado en roles (RBAC).
 
@@ -145,10 +146,13 @@ def require_role(allowed_roles: list[str]):
     tiene uno de los roles permitidos.
 
     Parámetros:
-        allowed_roles → lista de roles válidos (ej: ["admin", "manager"])
+        allowed_roles → lista de RoleCode permitidos (ej: [RoleCode.ADMIN])
 
     Uso típico:
-        @router.get("/admin", dependencies=[Depends(require_role(["admin"]))])
+        @router.get("/admin", dependencies=[Depends(require_role([RoleCode.ADMIN]))])
+
+    Para los casos más comunes preferí los helpers preconfigurados
+    (`require_admin`, `require_admin_or_stock`, `require_admin_or_pedidos`).
     """
 
     async def role_checker(
@@ -171,3 +175,11 @@ def require_role(allowed_roles: list[str]):
         return current_user  # User autorizado
 
     return role_checker  # Retorna la dependencia configurada
+
+
+# ─── Dependencias preconfiguradas (atajos para combinaciones frecuentes) ─────
+# Evitan repetir literals de roles en cada router y permiten refactor seguro.
+
+require_admin = require_role([RoleCode.ADMIN])
+require_admin_or_stock = require_role([RoleCode.ADMIN, RoleCode.STOCK])
+require_admin_or_pedidos = require_role([RoleCode.ADMIN, RoleCode.PEDIDOS])

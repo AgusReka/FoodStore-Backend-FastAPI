@@ -1,5 +1,5 @@
 # app/modules/productes/router.py
-from app.core.deps import require_role
+from app.core.deps import require_admin, require_admin_or_stock
 from app.modules.user.models import User
 from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
@@ -33,7 +33,7 @@ def get_product_service(session: Session = Depends(get_session)) -> ProductServi
 )
 def create_product(
     data: ProductCreate,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: ProductService = Depends(get_product_service),
 ) -> ProductPublic:
     return svc.create(data)
@@ -47,7 +47,7 @@ def create_product(
 def update(
     product_id: int,
     data: ProductUpdate,
-    _roles: Annotated[User, Depends(require_role(["ADMIN", "STOCK"]))],
+    _: Annotated[User, Depends(require_admin_or_stock)],
     svc: ProductService = Depends(get_product_service),
 ) -> ProductPublic:
     return svc.update(product_id, data)
@@ -85,7 +85,7 @@ def get_product(
 )
 def delete_product(
     product_id: int,
-    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    _: Annotated[User, Depends(require_admin)],
     svc: ProductService = Depends(get_product_service),
 ) -> None:
     svc.soft_delete(product_id)
@@ -98,7 +98,7 @@ def delete_product(
 )
 def activate_product(
     product_id: int,
-    _roles: Annotated[User, Depends(require_role(["ADMIN", "STOCK"]))],
+    _: Annotated[User, Depends(require_admin_or_stock)],
     svc: ProductService = Depends(get_product_service),
 ) -> None:
     svc.soft_activate(product_id)
