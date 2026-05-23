@@ -26,7 +26,7 @@ def get_category_service(session: Session = Depends(get_session)) -> CategorySer
 
 
 @router.post(
-    "/crear",
+    "/",
     response_model=CategoryPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Crear una categoria",
@@ -36,7 +36,6 @@ def create_category(
     _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: CategoryService = Depends(get_category_service),
 ) -> CategoryPublic:
-    """Router delega al servicio — sin lógica de negocio aquí."""
     return svc.create(data)
 
 
@@ -66,7 +65,7 @@ def get_category(
 
 
 @router.patch(
-    "actualizar/{category_id}",
+    "/{category_id}",
     response_model=CategoryPublic,
     summary="Actualización parcial de categoria",
 )
@@ -80,7 +79,7 @@ def update_category(
 
 
 @router.post(
-    "/activate/{category_id}",
+    "/{category_id}/activate",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft activate de categoria",
 )
@@ -93,7 +92,7 @@ def activate_category(
 
 
 @router.delete(
-    "borrar/{category_id}",
+    "/{category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft delete de categoria",
 )

@@ -28,7 +28,7 @@ def get_ingredient_service(
 
 
 @router.post(
-    "/crear",
+    "/",
     response_model=IngredientPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Crear un ingrediente",
@@ -38,7 +38,6 @@ def create_ingredient(
     _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientPublic:
-    """Router delega al servicio — sin lógica de negocio aquí."""
     return svc.create(data)
 
 
@@ -68,21 +67,21 @@ def get_ingredient(
 
 
 @router.patch(
-    "/actualizar/{ingredient_id}",
+    "/{ingredient_id}",
     response_model=IngredientPublic,
     summary="Actualización parcial de ingrediente",
 )
 def update_ingredient(
     ingredient_id: int,
     data: IngredientUpdate,
-    _roles  : Annotated[User, Depends(require_role(["ADMIN","STOCK"]))],
+    _roles: Annotated[User, Depends(require_role(["ADMIN", "STOCK"]))],
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientPublic:
     return svc.update(ingredient_id, data)
 
 
 @router.post(
-    "/activate/{ingredient_id}",
+    "/{ingredient_id}/activate",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft activate de ingrediente",
 )
@@ -95,7 +94,7 @@ def activate_ingredient(
 
 
 @router.delete(
-    "/borrar/{ingredient_id}",
+    "/{ingredient_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft delete de ingrediente",
 )
