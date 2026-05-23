@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
+from app.core.deps import require_role
+from app.modules.user.models import User
 from app.modules.pagos.service import FormaPagoService
 from app.modules.pagos.schemas import (
     FormaPagoCreate,
@@ -55,20 +57,20 @@ def get_forma_pago(
     response_model=FormaPagoPublic,
     status_code=status.HTTP_201_CREATED,
     summary="[ADMIN] Crear forma de pago",
-    description="Agrega una nueva forma de pago al sistema (simula permisos de ADMIN)."
+    description="Agrega una nueva forma de pago al sistema."
 )
 def create_forma_pago(
     forma_pago_in: FormaPagoCreate,
-    svc: FormaPagoService = Depends(get_forma_pago_service),
-    es_admin: bool = Query(default=True, description="Simular si es administrador")
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> FormaPagoPublic:
     """
-    Simula rol ADMIN por defecto.
+    Solo administradores pueden crear formas de pago.
     Valida unicidad del nombre.
     """
     return svc.create_forma_pago(
         forma_pago_in=forma_pago_in,
-        es_admin=es_admin
+        es_admin=True
     )
     
 @router.patch(
@@ -80,14 +82,14 @@ def create_forma_pago(
 def update_forma_pago(
     forma_pago_id: int,
     forma_pago_in: FormaPagoUpdate,
-    svc: FormaPagoService = Depends(get_forma_pago_service),
-    es_admin: bool = Query(default=True, description="Simular si es administrador")
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> FormaPagoPublic:
-    """Modifica descripción y configuración."""
+    """Solo administradores pueden modificar formas de pago."""
     return svc.update_forma_pago(
         forma_pago_id=forma_pago_id,
         forma_pago_in=forma_pago_in,
-        es_admin=es_admin
+        es_admin=True
     )
     
 @router.delete(
@@ -98,11 +100,12 @@ def update_forma_pago(
 )
 def delete_forma_pago(
     forma_pago_id: int,
-    svc: FormaPagoService = Depends(get_forma_pago_service),
-    es_admin: bool = Query(default=True, description="Simular si es administrador")
+    _admin: Annotated[User, Depends(require_role(["ADMIN"]))],
+    svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> None:
+    """Solo administradores pueden eliminar formas de pago."""
     svc.delete_forma_pago(
         forma_pago_id=forma_pago_id,
-        es_admin=es_admin
+        es_admin=True
     )
     return None

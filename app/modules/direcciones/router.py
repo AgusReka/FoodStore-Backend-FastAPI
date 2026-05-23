@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
+from app.core.deps import get_current_active_user
+from app.modules.user.models import User
 from app.modules.direcciones.service import DireccionesService
 from app.modules.direcciones.schemas import (
     DireccionEntregaCreate,
@@ -27,21 +29,21 @@ def get_direcciones_service(session: Session = Depends(get_session)) -> Direccio
     "/",
     response_model=DireccionEntregaList,
     summary="Listar mis direcciones",
-    description="Obtiene todas las direcciones de entrega del usuario (simulado para pruebas)."
+    description="Obtiene todas las direcciones de entrega del usuario."
 )
 def list_direcciones(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100)
 ) -> DireccionEntregaList:
-    """LISTADO: Solo direcciones del usuario especificado."""
+    """LISTADO: Solo direcciones del usuario autenticado."""
     direcciones = svc.get_direcciones_by_usuario(
-        usuario_id=usuario_id,
+        usuario_id=current_user.id,
         offset=offset,
         limit=limit
     )
-    total = svc.count_direcciones_by_usuario(usuario_id)
+    total = svc.count_direcciones_by_usuario(current_user.id)
     return DireccionEntregaList(data=direcciones, total=total)
 
 @router.get(
@@ -51,11 +53,11 @@ def list_direcciones(
     description="Obtiene la dirección marcada como principal del usuario (si tiene)."
 )
 def get_direccion_principal(
-    svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado")
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: DireccionesService = Depends(get_direcciones_service)
 ) -> Optional[DireccionEntregaPublic]:
     """Retorna null si el usuario no tiene dirección principal configurada."""
-    return svc.get_direccion_principal(usuario_id=usuario_id)
+    return svc.get_direccion_principal(usuario_id=current_user.id)
 
 @router.get(
     "/{direccion_id}",
@@ -65,13 +67,13 @@ def get_direccion_principal(
 )
 def get_direccion(
     direccion_id: int,
-    svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado")
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: DireccionesService = Depends(get_direcciones_service)
 ) -> DireccionEntregaPublic:
     """Un usuario NO puede acceder a direcciones de otro usuario."""
     return svc.get_direccion_by_id(
         direccion_id=direccion_id,
-        usuario_id=usuario_id
+        usuario_id=current_user.id
     )
     
 @router.post(
@@ -83,15 +85,15 @@ def get_direccion(
 )
 def create_direccion(
     direccion_in: DireccionEntregaCreate,
-    svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado")
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: DireccionesService = Depends(get_direcciones_service)
 ) -> DireccionEntregaPublic:
     """
     Si es_principal=True, automáticamente desmarca otras direcciones principales.
     Un usuario puede tener múltiples direcciones pero solo una principal.
     """
     return svc.create_direccion(
-        usuario_id=usuario_id,
+        usuario_id=current_user.id,
         direccion_in=direccion_in
     )  
     
@@ -104,8 +106,8 @@ def create_direccion(
 def update_direccion(
     direccion_id: int,
     direccion_in: DireccionEntregaUpdate,
-    svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado")
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: DireccionesService = Depends(get_direcciones_service)
 ) -> DireccionEntregaPublic:
     """
     Solo el propietario puede modificar su dirección.
@@ -113,7 +115,7 @@ def update_direccion(
     """
     return svc.update_direccion(
         direccion_id=direccion_id,
-        usuario_id=usuario_id,
+        usuario_id=current_user.id,
         direccion_in=direccion_in
     )
     
@@ -125,13 +127,13 @@ def update_direccion(
 )
 def marcar_principal(
     direccion_id: int,
-    svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado")
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: DireccionesService = Depends(get_direcciones_service)
 ) -> DireccionEntregaPublic:
     """Endpoint específico para cambiar la dirección principal sin enviar todos los campos."""
     return svc.marcar_como_principal(
         direccion_id=direccion_id,
-        usuario_id=usuario_id
+        usuario_id=current_user.id
     )
     
 @router.delete(
@@ -142,11 +144,11 @@ def marcar_principal(
 )
 def delete_direccion(
     direccion_id: int,
-    svc: DireccionesService = Depends(get_direcciones_service),
-    usuario_id: int = Query(default=1, description="ID de usuario simulado")
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: DireccionesService = Depends(get_direcciones_service)
 ) -> None:
     svc.delete_direccion(
         direccion_id=direccion_id,
-        usuario_id=usuario_id
+        usuario_id=current_user.id
     )
     return None
