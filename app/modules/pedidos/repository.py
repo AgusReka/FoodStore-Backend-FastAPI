@@ -92,18 +92,21 @@ class PedidoRepository(BaseRepository[Pedido]):
     def get_all_admin(
         self,
         estado_id: Optional[int] = None,
+        usuario_id: Optional[int] = None,
         offset: int = 0,
         limit: int = 20
     ) -> List[Pedido]:
         """
         Obtiene todos los pedidos (vista admin).
-        Puede filtrar por estado.
+        Puede filtrar por estado y/o por usuario.
         """
         query = select(Pedido).where(Pedido.deleted_at.is_(None))
-        
+
         if estado_id is not None:
             query = query.where(Pedido.estado_id == estado_id)
-        
+        if usuario_id is not None:
+            query = query.where(Pedido.usuario_id == usuario_id)
+
         return list(
             self.session.exec(
                 query.order_by(Pedido.created_at.desc()).offset(offset).limit(limit)
@@ -120,13 +123,19 @@ class PedidoRepository(BaseRepository[Pedido]):
             ).all()
         )
     
-    def count_admin(self, estado_id: Optional[int] = None) -> int:
+    def count_admin(
+        self,
+        estado_id: Optional[int] = None,
+        usuario_id: Optional[int] = None,
+    ) -> int:
         """Cuenta todos los pedidos (vista admin)."""
         query = select(Pedido).where(Pedido.deleted_at.is_(None))
-        
+
         if estado_id is not None:
             query = query.where(Pedido.estado_id == estado_id)
-        
+        if usuario_id is not None:
+            query = query.where(Pedido.usuario_id == usuario_id)
+
         return len(self.session.exec(query).all())
         
 

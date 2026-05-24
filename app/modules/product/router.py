@@ -1,6 +1,7 @@
 # app/modules/productes/router.py
 from app.core.deps import require_admin, require_admin_or_stock
 from app.modules.user.models import User
+from decimal import Decimal
 from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
@@ -11,6 +12,7 @@ from app.modules.product.schemas import (
     ProductPublic,
     ProductUpdate,
     ProductList,
+    ProductAvailabilityUpdate,
 )
 from app.modules.product.service import ProductService
 
@@ -61,9 +63,28 @@ def update(
 def list_productes(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    include_deleted: bool = Query(default=False),
+    name: str | None = Query(default=None, description="Substring case-insensitive"),
+    category_id: int | None = Query(default=None),
+    cascade: bool = Query(default=True, description="Si true, incluye productos de subcategorías"),
+    price_min: Decimal | None = Query(default=None, ge=0),
+    price_max: Decimal | None = Query(default=None, ge=0),
+    ingredient_ids: list[int] | None = Query(default=None, description="AND: el producto debe contener TODOS"),
+    available: bool | None = Query(default=None),
     svc: ProductService = Depends(get_product_service),
 ) -> ProductList:
-    return svc.get_all(offset=offset, limit=limit)
+    return svc.get_all(
+        offset=offset,
+        limit=limit,
+        include_deleted=include_deleted,
+        name=name,
+        category_id=category_id,
+        cascade=cascade,
+        price_min=price_min,
+        price_max=price_max,
+        ingredient_ids=ingredient_ids,
+        available=available,
+    )
 
 
 @router.get(
@@ -91,14 +112,15 @@ def delete_product(
     svc.soft_delete(product_id)
 
 
-@router.post(
-    "/{product_id}/activate",
+@router.patch(
+    "/{product_id}/availability",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Soft activate de producto",
+    summary="Pausar/reanudar venta del producto",
 )
-def activate_product(
+def set_product_availability(
     product_id: int,
+    data: ProductAvailabilityUpdate,
     _: Annotated[User, Depends(require_admin_or_stock)],
     svc: ProductService = Depends(get_product_service),
 ) -> None:
-    svc.soft_activate(product_id)
+    svc.set_availability(product_id, data.available)

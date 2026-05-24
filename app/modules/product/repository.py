@@ -1,5 +1,7 @@
 # app/modules/Productes/repository.py
+from decimal import Decimal
 from sqlmodel import Session, select, delete
+from sqlalchemy import func
 from app.core.repository import BaseRepository
 from app.modules.product.models import Product
 from app.modules.product.models import ProductCategoryLink, ProductIngredientLink
@@ -10,15 +12,120 @@ class ProductRepository(BaseRepository[Product]):
         super().__init__(session, Product)
 
     def get_by_name(self, name: str) -> Product | None:
-        return self.session.exec(select(Product).where(Product.name == name)).first()
+        # Soft-deleted products free their name for reuse.
+        return self.session.exec(
+            select(Product).where(
+                Product.name == name,
+                Product.deleted_at.is_(None),
+            )
+        ).first()
 
-    def get_all(self, offset=0, limit=20):
-        return list(
-            self.session.exec(select(Product).offset(offset).limit(limit)).all()
+    def _build_filtered_stmt(
+        self,
+        *,
+        include_deleted: bool = False,
+        name: str | None = None,
+        category_ids: list[int] | None = None,
+        price_min: Decimal | None = None,
+        price_max: Decimal | None = None,
+        ingredient_ids: list[int] | None = None,
+        available: bool | None = None,
+    ):
+        """
+        Construye el SELECT con todos los filtros aplicados. Devuelve un statement
+        que ya selecciona Product (distinct cuando hay joins N:N para evitar duplicados).
+        """
+        stmt = select(Product)
+        needs_distinct = False
+
+        if not include_deleted:
+            stmt = stmt.where(Product.deleted_at.is_(None))
+
+        if name:
+            stmt = stmt.where(Product.name.ilike(f"%{name}%"))
+
+        if available is not None:
+            stmt = stmt.where(Product.available == available)
+
+        if price_min is not None:
+            stmt = stmt.where(Product.base_price >= price_min)
+
+        if price_max is not None:
+            stmt = stmt.where(Product.base_price <= price_max)
+
+        if category_ids:
+            stmt = stmt.join(
+                ProductCategoryLink, ProductCategoryLink.product_id == Product.id
+            ).where(ProductCategoryLink.category_id.in_(category_ids))
+            needs_distinct = True
+
+        if ingredient_ids:
+            # Semántica AND: el producto debe contener TODOS los ingredientes seleccionados.
+            stmt = (
+                stmt.join(
+                    ProductIngredientLink,
+                    ProductIngredientLink.product_id == Product.id,
+                )
+                .where(ProductIngredientLink.ingredient_id.in_(ingredient_ids))
+                .group_by(Product.id)
+                .having(
+                    func.count(func.distinct(ProductIngredientLink.ingredient_id))
+                    == len(ingredient_ids)
+                )
+            )
+            needs_distinct = False  # GROUP BY ya colapsa
+
+        if needs_distinct:
+            stmt = stmt.distinct()
+
+        return stmt
+
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        *,
+        include_deleted: bool = False,
+        name: str | None = None,
+        category_ids: list[int] | None = None,
+        price_min: Decimal | None = None,
+        price_max: Decimal | None = None,
+        ingredient_ids: list[int] | None = None,
+        available: bool | None = None,
+    ):
+        stmt = self._build_filtered_stmt(
+            include_deleted=include_deleted,
+            name=name,
+            category_ids=category_ids,
+            price_min=price_min,
+            price_max=price_max,
+            ingredient_ids=ingredient_ids,
+            available=available,
         )
+        return list(self.session.exec(stmt.offset(offset).limit(limit)).all())
 
-    def count(self) -> int:
-        return len(self.session.exec(select(Product)).all())
+    def count(
+        self,
+        *,
+        include_deleted: bool = False,
+        name: str | None = None,
+        category_ids: list[int] | None = None,
+        price_min: Decimal | None = None,
+        price_max: Decimal | None = None,
+        ingredient_ids: list[int] | None = None,
+        available: bool | None = None,
+    ) -> int:
+        stmt = self._build_filtered_stmt(
+            include_deleted=include_deleted,
+            name=name,
+            category_ids=category_ids,
+            price_min=price_min,
+            price_max=price_max,
+            ingredient_ids=ingredient_ids,
+            available=available,
+        )
+        # `len(all())` mantiene consistencia con el resto del repo (sin contar nulls del GROUP BY).
+        return len(self.session.exec(stmt).all())
 
     def get_category_links(self, product_id: int) -> list[ProductCategoryLink]:
         return list(

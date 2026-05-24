@@ -76,3 +76,7 @@ class ProductPublic(ProductBase):
 class ProductList(SQLModel):
     total: int
     data: list[ProductPublic]
+
+
+class ProductAvailabilityUpdate(SQLModel):
+    available: bool

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
-from app.core.deps import get_current_active_user
+from app.core.deps import get_current_active_user, require_admin_or_pedidos
 from app.modules.user.models import User
 from app.modules.direcciones.service import DireccionesService
 from app.modules.direcciones.schemas import (
@@ -45,6 +45,29 @@ def list_direcciones(
     )
     total = svc.count_direcciones_by_usuario(current_user.id)
     return DireccionEntregaList(data=direcciones, total=total)
+
+@router.get(
+    "/admin/usuario/{usuario_id}",
+    response_model=DireccionEntregaList,
+    summary="[ADMIN/PEDIDOS] Listar direcciones de un usuario",
+    description="Vista administrativa: lista direcciones de cualquier usuario por ID."
+)
+def admin_list_direcciones_by_usuario(
+    usuario_id: int,
+    _: Annotated[User, Depends(require_admin_or_pedidos)],
+    svc: DireccionesService = Depends(get_direcciones_service),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100)
+) -> DireccionEntregaList:
+    """Solo ADMIN o PEDIDOS pueden consultar direcciones ajenas."""
+    direcciones = svc.get_direcciones_by_usuario(
+        usuario_id=usuario_id,
+        offset=offset,
+        limit=limit
+    )
+    total = svc.count_direcciones_by_usuario(usuario_id)
+    return DireccionEntregaList(data=direcciones, total=total)
+
 
 @router.get(
     "/principal",

@@ -49,9 +49,10 @@ def create_ingredient(
 def list_ingredientes(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    name: str | None = Query(default=None, description="Filtro por nombre (case-insensitive, substring)"),
     svc: IngredientService = Depends(get_ingredient_service),
 ) -> IngredientList:
-    return svc.get_all(offset=offset, limit=limit)
+    return svc.get_all(offset=offset, limit=limit, name=name)
 
 
 @router.get(

@@ -80,20 +80,22 @@ def admin_list_pedidos(
     _: Annotated[User, Depends(require_admin_or_pedidos)],
     svc: PedidoService = Depends(get_pedido_service),
     estado_id: Optional[int] = Query(default=None, description="Filtrar por ID de estado"),
+    usuario_id: Optional[int] = Query(default=None, description="Filtrar por ID de usuario"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100)
 ) -> PedidoList:
     """
-    Filtrado opcional por estado_id.
+    Filtrado opcional por estado_id y/o usuario_id.
     Paginación con offset/limit.
     Solo administradores y personal de pedidos pueden acceder.
     """
     pedidos = svc.get_all_pedidos_admin(
         estado_id=estado_id,
+        usuario_id=usuario_id,
         offset=offset,
         limit=limit
     )
-    total = svc.count_pedidos_admin(estado_id)
+    total = svc.count_pedidos_admin(estado_id, usuario_id)
     return PedidoList(data=pedidos, total=total)
 
 

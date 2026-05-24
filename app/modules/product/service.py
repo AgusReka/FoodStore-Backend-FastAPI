@@ -333,11 +333,63 @@ class ProductService:
 
             return result
 
-    def get_all(self, offset: int = 0, limit: int = 20) -> ProductList:
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        *,
+        include_deleted: bool = False,
+        name: str | None = None,
+        category_id: int | None = None,
+        cascade: bool = True,
+        price_min=None,
+        price_max=None,
+        ingredient_ids: list[int] | None = None,
+        available: bool | None = None,
+    ) -> ProductList:
         uow: ProductUnitOfWork
         with ProductUnitOfWork(self._session) as uow:
-            products = uow.products.get_all(offset, limit)
-            total = uow.products.count()
+            # Resolver cascada de categoría → lista plana de IDs
+            category_ids: list[int] | None = None
+            if category_id is not None:
+                if cascade:
+                    category_ids = uow.categories.get_descendant_ids(
+                        category_id, include_self=True
+                    )
+                else:
+                    category_ids = [category_id]
+
+            # Validación cruzada de precio
+            if price_min is not None and price_max is not None and price_min > price_max:
+                raise ValueError("price_min no puede ser mayor que price_max")
+
+            # Validar que los ingredientes existan (si vinieron)
+            if ingredient_ids:
+                found = uow.ingredients.get_all_in(ingredient_ids)
+                missing = set(ingredient_ids) - {ing.id for ing in found}
+                if missing:
+                    raise ValueError(f"Ingredientes no encontrados: {sorted(missing)}")
+
+            products = uow.products.get_all(
+                offset,
+                limit,
+                include_deleted=include_deleted,
+                name=name,
+                category_ids=category_ids,
+                price_min=price_min,
+                price_max=price_max,
+                ingredient_ids=ingredient_ids,
+                available=available,
+            )
+            total = uow.products.count(
+                include_deleted=include_deleted,
+                name=name,
+                category_ids=category_ids,
+                price_min=price_min,
+                price_max=price_max,
+                ingredient_ids=ingredient_ids,
+                available=available,
+            )
 
             product_ids = [p.id for p in products]
 
@@ -479,13 +531,20 @@ class ProductService:
             return result
 
     def soft_delete(self, product_id: int) -> None:
+        # Definitivo: marca deleted_at. No toca `available` (concepto separado).
         with ProductUnitOfWork(self._session) as uow:
             product = self._get_or_404(uow, product_id)
-            product.available = False
+            if product.deleted_at is not None:
+                raise ValueError("El producto ya está eliminado")
             product.deleted_at = datetime.now(timezone.utc)
 
-    def soft_activate(self, product_id: int) -> None:
+    def set_availability(self, product_id: int, available: bool) -> None:
+        # Pausar/reanudar venta sin afectar el soft delete.
         with ProductUnitOfWork(self._session) as uow:
             product = self._get_or_404(uow, product_id)
-            product.available = True
-            product.deleted_at = None
+            if product.deleted_at is not None:
+                raise ValueError(
+                    "No se puede cambiar la disponibilidad de un producto eliminado"
+                )
+            product.available = available
+            product.updated_at = datetime.now(timezone.utc)

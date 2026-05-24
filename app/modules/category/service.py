@@ -45,10 +45,15 @@ class CategoryService:
 
         return result
 
-    def get_all(self, offset: int = 0, limit: int = 20) -> CategoryList:
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        name: str | None = None,
+    ) -> CategoryList:
         with CategoryUnitOfWork(self._session) as uow:
-            categories = uow.category.get_all(offset, limit)
-            total = uow.category.count()
+            categories = uow.category.get_all(offset, limit, name=name)
+            total = uow.category.count(name=name)
             result = CategoryList(
                 data=[CategoryPublic.model_validate(h) for h in categories],
                 total=total,

@@ -44,12 +44,17 @@ class IngredientService:
 
         return result
 
-    def get_all(self, offset: int = 0, limit: int = 20) -> IngredientList:
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        name: str | None = None,
+    ) -> IngredientList:
         with IngredientUnitOfWork(self._session) as uow:
-            categories = uow.ingredient.get_all(offset, limit)
-            total = uow.ingredient.count()
+            ingredients = uow.ingredient.get_all(offset, limit, name=name)
+            total = uow.ingredient.count(name=name)
             result = IngredientList(
-                data=[IngredientPublic.model_validate(h) for h in categories],
+                data=[IngredientPublic.model_validate(h) for h in ingredients],
                 total=total,
             )
 

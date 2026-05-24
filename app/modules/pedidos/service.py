@@ -127,11 +127,12 @@ class PedidoService:
     def get_all_pedidos_admin(
         self,
         estado_id: Optional[int] = None,
+        usuario_id: Optional[int] = None,
         offset: int = 0,
         limit: int = 20,
     ) -> List[Pedido]:
         with OrderUnitOfWork(self._session) as uow:
-            return uow.pedidos.get_all_admin(estado_id, offset, limit)
+            return uow.pedidos.get_all_admin(estado_id, usuario_id, offset, limit)
 
 
     TRANSICIONES_VALIDAS = {
@@ -289,9 +290,13 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             return uow.pedidos.count_by_usuario(usuario_id)
 
-    def count_pedidos_admin(self, estado_id: Optional[int] = None) -> int:
+    def count_pedidos_admin(
+        self,
+        estado_id: Optional[int] = None,
+        usuario_id: Optional[int] = None,
+    ) -> int:
         with OrderUnitOfWork(self._session) as uow:
-            return uow.pedidos.count_admin(estado_id)
+            return uow.pedidos.count_admin(estado_id, usuario_id)
 
     def get_estados_pedido_ordered(self):
         with OrderUnitOfWork(self._session) as uow:

@@ -13,15 +13,20 @@ class IngredientRepository(BaseRepository[Ingredient]):
             select(Ingredient).where(Ingredient.name == name)
         ).first()
 
-    def get_all(self, offset=0, limit=20):
-        return list(
-            self.session.exec(select(Ingredient).offset(offset).limit(limit)).all()
-        )
+    def _apply_filters(self, stmt, name: str | None):
+        if name:
+            stmt = stmt.where(Ingredient.name.ilike(f"%{name}%"))
+        return stmt
+
+    def get_all(self, offset=0, limit=20, name: str | None = None):
+        stmt = self._apply_filters(select(Ingredient), name).offset(offset).limit(limit)
+        return list(self.session.exec(stmt).all())
 
     def get_all_in(self, ids: list[int]) -> list[Ingredient]:
         return list(
             self.session.exec(select(Ingredient).where(Ingredient.id.in_(ids))).all()
         )
 
-    def count(self) -> int:
-        return len(self.session.exec(select(Ingredient)).all())
+    def count(self, name: str | None = None) -> int:
+        stmt = self._apply_filters(select(Ingredient), name)
+        return len(self.session.exec(stmt).all())
