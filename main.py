@@ -10,6 +10,7 @@ from app.modules.pagos.router import router as pagos_router
 from app.modules.pedidos.router import router as pedidos_router
 from app.modules.direcciones.router import router as direcciones_router
 from app.modules.user.router import router as user_router
+from app.modules.stats.router import router as stats_router
 
 
 @asynccontextmanager
@@ -58,3 +59,4 @@ app.include_router(
 )
 app.include_router(product_router, prefix="/api/v1/products", tags=["Product"])
 app.include_router(user_router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(stats_router, prefix="/api/v1/stats", tags=["Stats"])
