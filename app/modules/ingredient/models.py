@@ -18,6 +18,7 @@ class Ingredient(SQLModel, table=True):
     # Atributos
     name: str = Field(max_length=100, nullable=False, index=True)
     description: Optional[str] = None
+    stock_quantity: int = Field(default=0, ge=0)
     is_allergen: bool = Field(default=True)
     is_active: bool = Field(default=True)
 

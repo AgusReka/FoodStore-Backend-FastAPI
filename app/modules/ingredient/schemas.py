@@ -12,6 +12,7 @@ from datetime import datetime
 class IngredientBase(SQLModel):
     name: str = Field(min_length=2, max_length=100)
     description: Optional[str] = None
+    stock_quantity: int = Field(default=0, ge=0)
     is_allergen: bool
 
 
@@ -24,8 +25,9 @@ class IngredientCreate(IngredientBase):
 
 class IngredientUpdate(SQLModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=100)
-    is_allergen: Optional[bool] = None
     description: Optional[str] = None
+    stock_quantity: Optional[int] = Field(default=None, ge=0)
+    is_allergen: Optional[bool] = None
 
 
 # ── Salida ────────────────────────────────────────────────────────────────────

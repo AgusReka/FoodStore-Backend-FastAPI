@@ -18,12 +18,14 @@ class ProductCategoryPublic(SQLModel):
 class ProductIngredientInput(SQLModel):
     id: int
     is_removable: bool
+    quantity: int = Field(default=1, ge=1)
 
 
 class ProductIngredientPublic(SQLModel):
     id: int
     name: str
     is_removable: bool
+    quantity: int
     is_allergen: bool
 
 

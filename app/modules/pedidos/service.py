@@ -15,7 +15,9 @@ from app.modules.pedidos.schemas import (
     CambioEstadoRequest,
     EstadoPedidoEnum,
 )
+from app.modules.product.models import Product
 from app.modules.product.repository import ProductRepository
+from app.modules.ingredient.repository import IngredientRepository
 
 
 class PedidoService:
@@ -32,8 +34,13 @@ class PedidoService:
                 )
 
             product_repo = ProductRepository(self._session)
+            ingredient_repo = IngredientRepository(self._session)
             subtotal = Decimal("0.00")
             detalles_a_crear = []
+            # Ingredientes necesarios para los productos compuestos
+            ingredient_requirements: dict[int, int] = {}
+            # Productos sin receta que usan su propio stock
+            standalone_products: list[tuple[Product, int]] = []
 
             for detalle_in in pedido_in.detalles:
                 producto = product_repo.get_by_id(detalle_in.producto_id)
@@ -48,11 +55,26 @@ class PedidoService:
                         status_code=status.HTTP_409_CONFLICT,
                         detail=f"Producto '{producto.name}' no está disponible",
                     )
-                if producto.stock_quantity < detalle_in.cantidad:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Stock insuficiente para '{producto.name}'. Disponible: {producto.stock_quantity}",
-                    )
+
+                ingredient_links = product_repo.get_ingredient_links(producto.id)
+                if ingredient_links:
+                    # El producto usa ingredientes: acumular lo que hace falta
+                    for link in ingredient_links:
+                        required = link.quantity * detalle_in.cantidad
+                        ingredient_requirements[link.ingredient_id] = (
+                            ingredient_requirements.get(link.ingredient_id, 0) + required
+                        )
+                else:
+                    # Producto independiente: se descuenta directamente del stock del producto
+                    if producto.stock_quantity < detalle_in.cantidad:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Stock insuficiente para '{producto.name}'. "
+                                f"Disponible: {producto.stock_quantity}"
+                            ),
+                        )
+                    standalone_products.append((producto, detalle_in.cantidad))
 
                 precio_unitario = producto.base_price
                 subtotal_detalle = precio_unitario * detalle_in.cantidad
@@ -66,7 +88,33 @@ class PedidoService:
                     "subtotal": subtotal_detalle,
                 })
 
-                producto.stock_quantity -= detalle_in.cantidad
+            if ingredient_requirements:
+                required_ingredient_ids = list(ingredient_requirements.keys())
+                ingredients = ingredient_repo.get_all_in(required_ingredient_ids)
+                missing_ingredients = set(required_ingredient_ids) - {ing.id for ing in ingredients}
+                if missing_ingredients:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Ingredientes no encontrados: {list(missing_ingredients)}",
+                    )
+
+                for ingredient in ingredients:
+                    required = ingredient_requirements[ingredient.id]
+                    if ingredient.stock_quantity < required:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Stock insuficiente para ingrediente '{ingredient.name}'. "
+                                f"Requerido: {required}, disponible: {ingredient.stock_quantity}"
+                            ),
+                        )
+
+                for ingredient in ingredients:
+                    ingredient.stock_quantity -= ingredient_requirements[ingredient.id]
+                    ingredient_repo.update(ingredient.id, ingredient)
+
+            for producto, cantidad in standalone_products:
+                producto.stock_quantity -= cantidad
                 if producto.stock_quantity == 0:
                     producto.available = False
                 product_repo.update(producto.id, producto)
@@ -180,6 +228,11 @@ class PedidoService:
 
             pedido.estado_id = nuevo_estado.id
             pedido.updated_at = datetime.now(timezone.utc)
+
+            if nuevo_estado.codigo == EstadoPedidoEnum.CANCELADO:
+                # Si se cancela desde admin o desde cambio de estado, devolvemos stock
+                self._restore_stock_for_pedido(pedido)
+
             uow.pedidos.update(pedido.id, pedido)
 
             self._registrar_cambio_estado(
@@ -219,15 +272,7 @@ class PedidoService:
             pedido.updated_at = datetime.now(timezone.utc)
             uow.pedidos.update(pedido.id, pedido)
 
-            # Reintegrar stock automáticamente
-            product_repo = ProductRepository(self._session)
-            for detalle in pedido.detalles:
-                producto = product_repo.get_by_id(detalle.producto_id)
-                if producto:
-                    producto.stock_quantity += detalle.cantidad
-                    if not producto.available and producto.stock_quantity > 0:
-                        producto.available = True
-                    product_repo.update(producto.id, producto)
+            self._restore_stock_for_pedido(pedido)
 
             self._registrar_cambio_estado(
                 uow,
@@ -285,6 +330,37 @@ class PedidoService:
             observaciones=observaciones,
         )
         uow.historial.create(historial)
+
+    def _restore_stock_for_pedido(self, pedido: Pedido) -> None:
+        # Recupera stock cuando un pedido se cancela.
+        product_repo = ProductRepository(self._session)
+        ingredient_repo = IngredientRepository(self._session)
+        ingredient_cache: dict[int, object] = {}
+
+        for detalle in pedido.detalles:
+            producto = product_repo.get_by_id(detalle.producto_id)
+            if not producto:
+                continue
+
+            ingredient_links = product_repo.get_ingredient_links(producto.id)
+            if ingredient_links:
+                # Producto compuesto: devolver ingredientes usados en el pedido
+                for link in ingredient_links:
+                    ingredient = ingredient_cache.get(link.ingredient_id)
+                    if ingredient is None:
+                        ingredient = ingredient_repo.get_by_id(link.ingredient_id)
+                        if ingredient is None:
+                            continue
+                        ingredient_cache[link.ingredient_id] = ingredient
+
+                    ingredient.stock_quantity += link.quantity * detalle.cantidad
+                    ingredient_repo.update(ingredient.id, ingredient)
+            else:
+                producto.stock_quantity += detalle.cantidad
+                if not producto.available and producto.stock_quantity > 0:
+                    producto.available = True
+                product_repo.update(producto.id, producto)
+
 
     def count_pedidos_by_usuario(self, usuario_id: int) -> int:
         with OrderUnitOfWork(self._session) as uow:

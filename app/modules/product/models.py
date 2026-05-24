@@ -41,6 +41,7 @@ class ProductIngredientLink(SQLModel, table=True):
 
     # Attributes
     is_removable: bool = Field(default=False, nullable=False)
+    quantity: int = Field(default=1, nullable=False, ge=1)
 
     # Audit
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

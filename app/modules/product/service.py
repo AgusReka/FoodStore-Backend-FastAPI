@@ -127,12 +127,14 @@ class ProductService:
                 )
 
             # 🔗 crear relaciones - ingredientes
+            # Guardamos la receta del producto: qué ingredientes usa y en qué cantidad
             for ing in data.ingredients:
                 uow.products.add_ingredient(
                     ProductIngredientLink(
                         product_id=product.id,
                         ingredient_id=ing.id,
                         is_removable=ing.is_removable,
+                        quantity=ing.quantity,
                     )
                 )
 
@@ -162,6 +164,7 @@ class ProductService:
                         id=ing.id,
                         name=ingredient_map[ing.id].name,
                         is_removable=ing.is_removable,
+                        quantity=ing.quantity,
                         is_allergen=ingredient_map[ing.id].is_allergen,
                     )
                     for ing in data.ingredients
@@ -271,16 +274,19 @@ class ProductService:
                             product_id=product.id,
                             ingredient_id=ing.id,
                             is_removable=ing.is_removable,
+                            quantity=ing.quantity,
                         )
                     )
 
-                # 🔄 actualizar
+                # 🔄 actualizar existentes: también actualizamos la cantidad usada en la receta
                 for ing_id in current_ing_ids & new_ing_ids:
                     link = current_ing_map[ing_id]
                     new_ing = new_ing_map[ing_id]
 
                     if link.is_removable != new_ing.is_removable:
                         link.is_removable = new_ing.is_removable
+                    if link.quantity != new_ing.quantity:
+                        link.quantity = new_ing.quantity
 
             else:
                 # si no vienen ingredientes, armamos el map desde DB para response
@@ -291,7 +297,9 @@ class ProductService:
 
                 ingredients = [
                     ProductIngredientInput(
-                        id=l.ingredient_id, is_removable=l.is_removable
+                        id=l.ingredient_id,
+                        is_removable=l.is_removable,
+                        quantity=l.quantity,
                     )
                     for l in current_ing_links
                 ]
@@ -443,6 +451,7 @@ class ProductService:
                         name=ingredient_map[link.ingredient_id].name,
                         is_allergen=ingredient_map[link.ingredient_id].is_allergen,
                         is_removable=link.is_removable,
+                        quantity=link.quantity,
                     )
                     for link in product_ingredient_links
                 ]
@@ -507,6 +516,7 @@ class ProductService:
                     name=ingredient_map[link.ingredient_id].name,
                     is_allergen=ingredient_map[link.ingredient_id].is_allergen,
                     is_removable=link.is_removable,
+                    quantity=link.quantity,
                 )
                 for link in ingredient_links
             ]
