@@ -28,7 +28,8 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",  # React dev
-    "http://localhost:5173",  # Vite
+    "http://localhost:5173",  #Cliente
+    "http://localhost:5174",  # Admin
     "http://127.0.0.1:5173",
 ]
 
