@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.modules.stats.schemas import DashboardStats
 from app.modules.pedidos.models import Pedido, EstadoPedido
 from app.modules.pedidos.schemas import EstadoPedidoEnum
-from app.modules.product.models import Product
+from app.modules.product.models import Product, ProductIngredientLink
 from app.modules.ingredient.models import Ingredient
 
 
@@ -80,11 +80,17 @@ class StatsService:
             select(func.count(Product.id)).where(Product.deleted_at.is_(None))
         ).one()
 
-        # ── Productos con stock bajo ───────────────────────────────────────
+        # ── Productos con stock bajo (solo standalone, sin receta) ─────────
+        # Los productos con ingredientes consumen stock de Ingredient, no del
+        # propio Product, así que su stock_quantity no es métrica útil.
+        has_recipe = select(ProductIngredientLink.product_id).where(
+            ProductIngredientLink.product_id == Product.id
+        )
         productos_bajo_stock = self._session.exec(
             select(func.count(Product.id)).where(
                 Product.deleted_at.is_(None),
                 Product.stock_quantity < LOW_STOCK_THRESHOLD,
+                ~has_recipe.exists(),
             )
         ).one()
 
@@ -93,6 +99,15 @@ class StatsService:
             select(func.count(Ingredient.id)).where(
                 Ingredient.deleted_at.is_(None),
                 Ingredient.is_active.is_(True),
+            )
+        ).one()
+
+        # ── Ingredientes con stock bajo ────────────────────────────────────
+        ingredientes_bajo_stock = self._session.exec(
+            select(func.count(Ingredient.id)).where(
+                Ingredient.deleted_at.is_(None),
+                Ingredient.is_active.is_(True),
+                Ingredient.stock_quantity < LOW_STOCK_THRESHOLD,
             )
         ).one()
 
@@ -105,4 +120,5 @@ class StatsService:
             productos_activos=int(productos_activos or 0),
             productos_bajo_stock=int(productos_bajo_stock or 0),
             ingredientes_activos=int(ingredientes_activos or 0),
+            ingredientes_bajo_stock=int(ingredientes_bajo_stock or 0),
         )

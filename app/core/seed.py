@@ -202,36 +202,86 @@ def seed_ingredients(db: Session) -> dict[str, Ingredient]:
             "name": "Pan brioche",
             "description": "Pan suave y esponjoso",
             "is_allergen": True,
+            "stock_quantity": 120,
         },
         {
             "name": "Carne vacuna",
             "description": "Medallón de carne 200g",
             "is_allergen": False,
+            "stock_quantity": 80,
         },
-        {"name": "Lechuga", "description": "Lechuga fresca", "is_allergen": False},
+        {
+            "name": "Lechuga",
+            "description": "Lechuga fresca",
+            "is_allergen": False,
+            "stock_quantity": 60,
+        },
         {
             "name": "Tomate",
             "description": "Tomate fresco en rodajas",
             "is_allergen": False,
+            "stock_quantity": 50,
         },
-        {"name": "Cebolla", "description": "Cebolla morada", "is_allergen": False},
+        {
+            "name": "Cebolla",
+            "description": "Cebolla morada",
+            "is_allergen": False,
+            "stock_quantity": 70,
+        },
         {
             "name": "Queso cheddar",
             "description": "Queso cheddar fundido",
             "is_allergen": True,
+            "stock_quantity": 90,
         },
-        {"name": "Bacon", "description": "Panceta crocante", "is_allergen": False},
-        {"name": "Mayonesa", "description": "Mayonesa casera", "is_allergen": True},
-        {"name": "Ketchup", "description": "Salsa ketchup", "is_allergen": False},
-        {"name": "Mostaza", "description": "Mostaza Dijón", "is_allergen": False},
-        {"name": "Salsa BBQ", "description": "Salsa BBQ ahumada", "is_allergen": False},
+        {
+            "name": "Bacon",
+            "description": "Panceta crocante",
+            "is_allergen": False,
+            "stock_quantity": 40,
+        },
+        {
+            "name": "Mayonesa",
+            "description": "Mayonesa casera",
+            "is_allergen": True,
+            "stock_quantity": 200,
+        },
+        {
+            "name": "Ketchup",
+            "description": "Salsa ketchup",
+            "is_allergen": False,
+            "stock_quantity": 200,
+        },
+        {
+            "name": "Mostaza",
+            "description": "Mostaza Dijón",
+            "is_allergen": False,
+            "stock_quantity": 150,
+        },
+        {
+            "name": "Salsa BBQ",
+            "description": "Salsa BBQ ahumada",
+            "is_allergen": False,
+            "stock_quantity": 100,
+        },
         {
             "name": "Jalapeños",
             "description": "Jalapeños encurtidos",
             "is_allergen": False,
+            "stock_quantity": 30,
         },
-        {"name": "Papas", "description": "Papa blanca", "is_allergen": False},
-        {"name": "Huevo", "description": "Huevo frito", "is_allergen": True},
+        {
+            "name": "Papas",
+            "description": "Papa blanca",
+            "is_allergen": False,
+            "stock_quantity": 250,
+        },
+        {
+            "name": "Huevo",
+            "description": "Huevo frito",
+            "is_allergen": True,
+            "stock_quantity": 8,
+        },
     ]
 
     ingrs: dict[str, Ingredient] = {}
@@ -267,10 +317,12 @@ def _link_categories(
 
 
 def _link_ingredients(
-    db: Session, product: Product, ingredients: list[tuple[Ingredient, bool]]
+    db: Session,
+    product: Product,
+    ingredients: list[tuple[Ingredient, bool, int]],
 ) -> None:
-    """Vincula un producto con sus ingredientes. El segundo elemento indica si es removible."""
-    for ingr, is_removable in ingredients:
+    """Vincula un producto con sus ingredientes. Tupla: (ingr, is_removable, quantity)."""
+    for ingr, is_removable, quantity in ingredients:
         exists = db.exec(
             select(ProductIngredientLink).where(
                 ProductIngredientLink.product_id == product.id,
@@ -283,6 +335,7 @@ def _link_ingredients(
                     product_id=product.id,
                     ingredient_id=ingr.id,
                     is_removable=is_removable,
+                    quantity=quantity,
                 )
             )
 
@@ -301,12 +354,12 @@ def seed_products(
             },
             "cats": [("Clásicas", True), ("Hamburguesas", False)],
             "ingrs": [
-                ("Pan brioche", False),
-                ("Carne vacuna", False),
-                ("Lechuga", True),
-                ("Tomate", True),
-                ("Cebolla", True),
-                ("Mayonesa", True),
+                ("Pan brioche", False, 1),
+                ("Carne vacuna", False, 1),
+                ("Lechuga", True, 1),
+                ("Tomate", True, 1),
+                ("Cebolla", True, 1),
+                ("Mayonesa", True, 1),
             ],
         },
         {
@@ -319,12 +372,12 @@ def seed_products(
             },
             "cats": [("Premium", True), ("Hamburguesas", False)],
             "ingrs": [
-                ("Pan brioche", False),
-                ("Carne vacuna", False),
-                ("Queso cheddar", True),
-                ("Bacon", True),
-                ("Salsa BBQ", True),
-                ("Cebolla", True),
+                ("Pan brioche", False, 1),
+                ("Carne vacuna", False, 1),
+                ("Queso cheddar", True, 1),
+                ("Bacon", True, 2),
+                ("Salsa BBQ", True, 1),
+                ("Cebolla", True, 1),
             ],
         },
         {
@@ -337,12 +390,12 @@ def seed_products(
             },
             "cats": [("Clásicas", True), ("Hamburguesas", False)],
             "ingrs": [
-                ("Pan brioche", False),
-                ("Carne vacuna", False),
-                ("Queso cheddar", True),
-                ("Lechuga", True),
-                ("Tomate", True),
-                ("Mayonesa", True),
+                ("Pan brioche", False, 1),
+                ("Carne vacuna", False, 2),
+                ("Queso cheddar", True, 2),
+                ("Lechuga", True, 1),
+                ("Tomate", True, 1),
+                ("Mayonesa", True, 1),
             ],
         },
         {
@@ -355,12 +408,12 @@ def seed_products(
             },
             "cats": [("Premium", True), ("Hamburguesas", False)],
             "ingrs": [
-                ("Pan brioche", False),
-                ("Carne vacuna", False),
-                ("Jalapeños", True),
-                ("Queso cheddar", True),
-                ("Salsa BBQ", True),
-                ("Mayonesa", True),
+                ("Pan brioche", False, 1),
+                ("Carne vacuna", False, 1),
+                ("Jalapeños", True, 2),
+                ("Queso cheddar", True, 1),
+                ("Salsa BBQ", True, 1),
+                ("Mayonesa", True, 1),
             ],
         },
         {
@@ -372,7 +425,7 @@ def seed_products(
                 "prep_time_min": 10,
             },
             "cats": [("Acompañamientos", True)],
-            "ingrs": [("Papas", False)],
+            "ingrs": [("Papas", False, 1)],
         },
         {
             "data": {
@@ -383,7 +436,7 @@ def seed_products(
                 "prep_time_min": 12,
             },
             "cats": [("Acompañamientos", True)],
-            "ingrs": [("Cebolla", False)],
+            "ingrs": [("Cebolla", False, 1)],
         },
         {
             "data": {
@@ -430,7 +483,11 @@ def seed_products(
             db.flush()
 
         _link_categories(db, product, [(cats[c], is_p) for c, is_p in p["cats"]])
-        _link_ingredients(db, product, [(ingrs[i], is_r) for i, is_r in p["ingrs"]])
+        _link_ingredients(
+            db,
+            product,
+            [(ingrs[i], is_r, qty) for i, is_r, qty in p["ingrs"]],
+        )
 
     db.commit()
 

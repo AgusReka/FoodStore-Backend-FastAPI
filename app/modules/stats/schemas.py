@@ -14,3 +14,4 @@ class DashboardStats(SQLModel):
     productos_activos: int
     productos_bajo_stock: int
     ingredientes_activos: int
+    ingredientes_bajo_stock: int
