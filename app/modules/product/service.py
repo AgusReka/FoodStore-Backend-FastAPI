@@ -334,6 +334,7 @@ class ProductService:
                         name=ingredient_map[ing.id].name,
                         is_allergen=ingredient_map[ing.id].is_allergen,
                         is_removable=ing.is_removable,
+                        quantity=ing.quantity,
                     )
                     for ing in ingredients
                 ],
