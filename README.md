@@ -6,3 +6,9 @@ venv\Scripts\activate
 pip install -r requirements.txt
 # Comando para iniciarlo
 uvicorn main:app --reload
+# Integrantes
+Agustin Recabarren
+Emanuel Crespo
+Ignacio Navarria
+# Link Video
+https://youtu.be/I98v2qds-T0
