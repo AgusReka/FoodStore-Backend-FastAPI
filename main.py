@@ -15,7 +15,10 @@ from app.modules.stats.router import router as stats_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    run_seed()
+    try:
+        run_seed()
+    except Exception as e:
+        print(f"[seed] Warning: {e}")
     yield
 
 
