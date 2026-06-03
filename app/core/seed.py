@@ -1,3 +1,5 @@
+import random
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlmodel import Session, select
@@ -5,9 +7,15 @@ from sqlmodel import Session, select
 from app.core.database import create_db_and_tables, engine
 from app.core.security import hash_password
 from app.modules.category.models import Category
+from app.modules.direcciones.models import DireccionEntrega
 from app.modules.ingredient.models import Ingredient
 from app.modules.pagos.models import FormaPago
-from app.modules.pedidos.models import EstadoPedido
+from app.modules.pedidos.models import (
+    EstadoPedido,
+    Pedido,
+    DetallePedido,
+    HistorialEstadoPedido,
+)
 from app.modules.pedidos.schemas import EstadoPedidoEnum
 from app.modules.product.models import (
     Product,
@@ -17,6 +25,26 @@ from app.modules.product.models import (
 from app.modules.user.models import User
 from app.modules.user.rol import Rol
 from app.modules.user.user_rol import UserRol
+
+# ── Seed de datos para gráficos ──────────────────────────────────────────────
+# Productos de referencia para generar pedidos con datos realistas.
+# Se cargan por nombre después de que seed_products() los haya creado.
+PRODUCTOS_SEED = [
+    {"name": "Hamburguesa Clásica",  "price": Decimal("1500.00")},
+    {"name": "Hamburguesa BBQ Bacon","price": Decimal("2000.00")},
+    {"name": "Hamburguesa Doble",    "price": Decimal("2200.00")},
+    {"name": "Hamburguesa Picante",  "price": Decimal("1900.00")},
+    {"name": "Papas Fritas",         "price": Decimal("800.00")},
+    {"name": "Aros de Cebolla",      "price": Decimal("900.00")},
+    {"name": "Coca Cola 500ml",      "price": Decimal("600.00")},
+    {"name": "Agua Mineral 500ml",   "price": Decimal("400.00")},
+    {"name": "Brownie de Chocolate", "price": Decimal("700.00")},
+]
+
+COSTO_ENVIO = Decimal("500.00")
+
+# Semilla fija para que los datos sean reproducibles
+random.seed(42)
 
 # Importados para que create_db_and_tables() registre todas las tablas
 import app.modules.direcciones.models  # noqa
@@ -526,11 +554,245 @@ def seed_usuarios(db: Session) -> None:
     db.commit()
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Direcciones de ejemplo para usuarios CLIENT
+# ─────────────────────────────────────────────────────────────────────
+def seed_direcciones(db: Session) -> dict[int, int]:
+    """Crea direcciones de prueba y retorna dict user_id -> direccion_id."""
+    clientes = db.exec(
+        select(User)
+        .join(UserRol, UserRol.id_user == User.id)
+        .where(UserRol.rol_code == "CLIENT")
+    ).all()
+
+    direcciones_por_usuario: dict[int, int] = {}
+    calles = ["Av. Siempre Viva", "San Martín", "Belgrano", "Mitre", "Sarmiento"]
+    localidades = ["Buenos Aires", "Córdoba", "Rosario", "Mendoza", "La Plata"]
+
+    for user in clientes:
+        existing = db.exec(
+            select(DireccionEntrega).where(
+                DireccionEntrega.usuario_id == user.id,
+                DireccionEntrega.es_principal == True,
+            )
+        ).first()
+        if existing:
+            direcciones_por_usuario[user.id] = existing.id
+            continue
+
+        calle = random.choice(calles)
+        direccion = DireccionEntrega(
+            usuario_id=user.id,
+            alias="Casa",
+            calle=calle,
+            numero=str(random.randint(100, 3000)),
+            piso_dpto=None,
+            ciudad=random.choice(localidades),
+            provincia="Buenos Aires",
+            codigo_postal=str(random.randint(1000, 9999)),
+            es_principal=True,
+        )
+        db.add(direccion)
+        db.flush()
+        direcciones_por_usuario[user.id] = direccion.id
+
+    db.commit()
+    return direcciones_por_usuario
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Pedidos de prueba con datos variados para los gráficos
+# ─────────────────────────────────────────────────────────────────────
+def seed_pedidos(
+    db: Session,
+    direcciones: dict[int, int],
+) -> None:
+    """Genera ~65 pedidos en los últimos 30 días con estados y totales variados."""
+
+    # Mapeo estado_codigo -> estado_id
+    estados: dict[str, int] = {}
+    rows = db.exec(select(EstadoPedido)).all()
+    for e in rows:
+        estados[e.codigo.value] = e.id
+
+    # Productos disponibles (name -> {id, base_price})
+    productos: dict[str, dict] = {}
+    for p in db.exec(select(Product)).all():
+        productos[p.name] = {"id": p.id, "price": p.base_price}
+
+    # Saltar si ya hay pedidos (seed manual con python -m app.core.seed)
+    existing = db.exec(select(Pedido.id).limit(1)).first()
+    if existing:
+        print("  [=] Pedidos ya existen — regeneralos con: python -m app.core.seed")
+        return
+
+    now = datetime.now(timezone.utc)
+    cliente_ids = list(direcciones.keys())
+    if not cliente_ids:
+        print("  [!] No hay clientes con dirección — saltando pedidos")
+        return
+
+    for dia in range(30, 0, -1):
+        # Fecha del pedido
+        order_date = now - timedelta(days=dia)
+        # Más pedidos en finde, menos entre semana
+        is_weekend = order_date.weekday() >= 5
+        orders_this_day = random.randint(2, 4) if not is_weekend else random.randint(3, 6)
+
+        for _ in range(orders_this_day):
+            user_id = random.choice(cliente_ids)
+            direccion_id = direcciones[user_id]
+
+            # Seleccionar 1-3 productos
+            picks = random.choices(
+                list(productos.values()),
+                k=random.randint(1, 3),
+            )
+
+            # Asignar cantidades
+            detalles_data = []
+            subtotal = Decimal("0.00")
+            for prod in picks:
+                qty = random.randint(1, 3)
+                line_total = prod["price"] * qty
+                detalles_data.append({
+                    "producto_id": prod["id"],
+                    "producto_nombre": [k for k, v in productos.items() if v["id"] == prod["id"]][0],
+                    "producto_precio_unitario": prod["price"],
+                    "cantidad": qty,
+                    "subtotal": line_total,
+                })
+                subtotal += line_total
+
+            costo_envio = COSTO_ENVIO
+            total = subtotal + costo_envio
+
+            # Decidir estado según la antigüedad del pedido
+            dias_antiguedad = (now - order_date).days
+
+            if dias_antiguedad >= 2:
+                # Pedidos viejos: mayormente ENTREGADO, algunos CANCELADO
+                estado_codigo = (
+                    EstadoPedidoEnum.CANCELADO
+                    if random.random() < 0.12
+                    else EstadoPedidoEnum.ENTREGADO
+                )
+            elif dias_antiguedad >= 1:
+                # Pedidos de ayer: CONFIRMADO, EN_PREP, o ya ENTREGADO
+                estado_codigo = random.choice([
+                    EstadoPedidoEnum.CONFIRMADO,
+                    EstadoPedidoEnum.EN_PREP,
+                    EstadoPedidoEnum.EN_CAMINO,
+                    EstadoPedidoEnum.ENTREGADO,
+                ])
+            else:
+                # Pedidos de hoy: PENDIENTE o CONFIRMADO
+                estado_codigo = random.choice([
+                    EstadoPedidoEnum.PENDIENTE,
+                    EstadoPedidoEnum.CONFIRMADO,
+                    EstadoPedidoEnum.EN_PREP,
+                ])
+
+            estado_id = estados[estado_codigo.value]
+
+            # Crear el pedido
+            pedido = Pedido(
+                usuario_id=user_id,
+                direccion_entrega_id=direccion_id,
+                forma_pago_id=random.randint(1, 4),
+                estado_id=estado_id,
+                subtotal=subtotal,
+                costo_envio=costo_envio,
+                total=total,
+                notas_cliente=random.choice([
+                    None, None, None,
+                    "Sin cebolla por favor",
+                    "Bien de sal",
+                    "Salsa extra",
+                ]),
+                created_at=order_date,
+                updated_at=order_date,
+            )
+            db.add(pedido)
+            db.flush()
+
+            # Crear detalles del pedido
+            for d in detalles_data:
+                detalle = DetallePedido(
+                    pedido_id=pedido.id,
+                    producto_id=d["producto_id"],
+                    producto_nombre=d["producto_nombre"],
+                    producto_precio_unitario=d["producto_precio_unitario"],
+                    cantidad=d["cantidad"],
+                    subtotal=d["subtotal"],
+                )
+                db.add(detalle)
+
+            # Crear historial de estados
+            # Estados en orden de avance (CANCELADO se maneja aparte)
+            estados_orden = [
+                EstadoPedidoEnum.PENDIENTE,
+                EstadoPedidoEnum.CONFIRMADO,
+                EstadoPedidoEnum.EN_PREP,
+                EstadoPedidoEnum.EN_CAMINO,
+                EstadoPedidoEnum.ENTREGADO,
+            ]
+
+            historial_fechas: list[tuple[EstadoPedidoEnum, datetime]] = []
+            if estado_codigo == EstadoPedidoEnum.CANCELADO:
+                # Cancelado: avanzó hasta EN_PREP o CONFIRMADO, luego canceló
+                ultimo_activo = random.choice([
+                    EstadoPedidoEnum.CONFIRMADO,
+                    EstadoPedidoEnum.EN_PREP,
+                ])
+                for i, est in enumerate(estados_orden):
+                    if est == ultimo_activo or (
+                        estados_orden.index(est) < estados_orden.index(ultimo_activo)
+                    ):
+                        cambio = order_date + timedelta(
+                            minutes=random.randint(5, 60 * (i + 1))
+                        )
+                        historial_fechas.append((est, cambio))
+                    else:
+                        break
+                # Agregar CANCELADO al final
+                historial_fechas.append((
+                    EstadoPedidoEnum.CANCELADO,
+                    order_date + timedelta(
+                        minutes=random.randint(30, 120)
+                    ),
+                ))
+            else:
+                for i, est in enumerate(estados_orden):
+                    if est == estado_codigo or (
+                        estados_orden.index(est) < estados_orden.index(estado_codigo)
+                    ):
+                        cambio = order_date + timedelta(
+                            minutes=random.randint(5, 60 * (i + 1))
+                        )
+                        historial_fechas.append((est, cambio))
+                    else:
+                        break
+
+            for est, fecha in historial_fechas:
+                db.add(HistorialEstadoPedido(
+                    pedido_id=pedido.id,
+                    estado_id=estados[est.value],
+                    usuario_cambio_id=1,  # admin
+                    observaciones=None,
+                    created_at=fecha,
+                ))
+
+    db.commit()
+    total_pedidos = db.exec(select(Pedido.id)).all()
+    print(f"  [+] {len(total_pedidos)} pedidos generados")
+
+
 def run_seed() -> None:
     create_db_and_tables()
     with Session(engine) as db:
         print("\n— Roles —")
-        seed_roles(db)  # los roles deben existir ANTES de asignarlos a usuarios
+        seed_roles(db)
 
         print("\n— Usuarios —")
         seed_usuarios(db)
@@ -550,11 +812,18 @@ def run_seed() -> None:
         print("\n— Productos —")
         seed_products(db, cats, ingrs)
 
+        print("\n— Direcciones —")
+        direcciones = seed_direcciones(db)
+        print(f"  [+] {len(direcciones)} direcciones creadas")
+
+        print("\n— Pedidos de prueba —")
+        seed_pedidos(db, direcciones)
+
     print("\nUsuarios disponibles para pruebas:")
-    print("  admin  / Admin1234!   → role=ADMIN")
-    print("  juan   / Juan1234!   → role=CLIENT")
-    print("  lionel / Lionel1234! → role=STOCK")
-    print("  pepe   / Pepe1234!   → role=PEDIDOS")
+    print("  admin  / Admin1234!   -> role=ADMIN")
+    print("  juan   / Juan1234!   -> role=CLIENT")
+    print("  lionel / Lionel1234! -> role=STOCK")
+    print("  pepe   / Pepe1234!   -> role=PEDIDOS")
     print()
 
 

@@ -1,10 +1,15 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import func, cast, Date
 from sqlmodel import Session, select
 
-from app.modules.stats.schemas import DashboardStats
+from app.modules.stats.schemas import (
+    DashboardStats,
+    TicketEvolutionItem,
+    OrdersByStatus,
+    OrdersByDayItem,
+)
 from app.modules.pedidos.models import Pedido, EstadoPedido
 from app.modules.pedidos.schemas import EstadoPedidoEnum
 from app.modules.product.models import Product, ProductIngredientLink
@@ -122,3 +127,96 @@ class StatsService:
             ingredientes_activos=int(ingredientes_activos or 0),
             ingredientes_bajo_stock=int(ingredientes_bajo_stock or 0),
         )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Ticket promedio por día (línea)
+    # ─────────────────────────────────────────────────────────────────────
+    def get_ticket_evolution(self, days: int = 30) -> list[TicketEvolutionItem]:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        rows = self._session.exec(
+            select(
+                cast(Pedido.created_at, Date).label("date"),
+                func.avg(Pedido.total).label("avg_ticket"),
+            )
+            .join(EstadoPedido, EstadoPedido.id == Pedido.estado_id)
+            .where(
+                Pedido.created_at >= cutoff,
+                Pedido.deleted_at.is_(None),
+                EstadoPedido.codigo != EstadoPedidoEnum.CANCELADO,
+            )
+            .group_by(cast(Pedido.created_at, Date))
+            .order_by(cast(Pedido.created_at, Date))
+        ).all()
+
+        return [
+            TicketEvolutionItem(
+                date=row[0],
+                avg_ticket=Decimal(str(row[1])).quantize(Decimal("0.01")),
+            )
+            for row in rows
+        ]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Pedidos agrupados por estado actual (torta)
+    # ─────────────────────────────────────────────────────────────────────
+    def get_orders_by_status(self) -> OrdersByStatus:
+        counts: dict[str, int] = dict(
+            self._session.exec(
+                select(EstadoPedido.codigo, func.count(Pedido.id))
+                .join(Pedido, Pedido.estado_id == EstadoPedido.id)
+                .where(Pedido.deleted_at.is_(None))
+                .group_by(EstadoPedido.codigo)
+            ).all()
+        )
+
+        return OrdersByStatus(
+            pendiente=counts.get(EstadoPedidoEnum.PENDIENTE, 0),
+            confirmado=counts.get(EstadoPedidoEnum.CONFIRMADO, 0),
+            en_preparacion=counts.get(EstadoPedidoEnum.EN_PREP, 0),
+            en_camino=counts.get(EstadoPedidoEnum.EN_CAMINO, 0),
+            entregado=counts.get(EstadoPedidoEnum.ENTREGADO, 0),
+            cancelado=counts.get(EstadoPedidoEnum.CANCELADO, 0),
+        )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Pedidos por día (barras semanal)
+    # ─────────────────────────────────────────────────────────────────────
+    def get_orders_by_day(self, days: int = 7) -> list[OrdersByDayItem]:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        rows = self._session.exec(
+            select(
+                cast(Pedido.created_at, Date).label("date"),
+                func.count(Pedido.id).label("count"),
+            )
+            .where(
+                Pedido.created_at >= cutoff,
+                Pedido.deleted_at.is_(None),
+            )
+            .group_by(cast(Pedido.created_at, Date))
+            .order_by(cast(Pedido.created_at, Date))
+        ).all()
+
+        DAY_NAMES = {
+            0: "Lunes", 1: "Martes", 2: "Miércoles",
+            3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo",
+        }
+
+        # Indexar resultados por fecha
+        counts_by_date: dict[date, int] = {}
+        for row in rows:
+            counts_by_date[row[0]] = int(row[1])
+
+        # Rellenar todos los días del rango, incluso sin pedidos
+        today = datetime.now(timezone.utc).date()
+        result: list[OrdersByDayItem] = []
+        for i in range(days):
+            d = today - timedelta(days=days - 1 - i)
+            result.append(
+                OrdersByDayItem(
+                    date=d,
+                    day_name=DAY_NAMES[d.weekday()],
+                    count=counts_by_date.get(d, 0),
+                )
+            )
+
+        return result

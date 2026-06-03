@@ -1,4 +1,6 @@
+from datetime import date
 from decimal import Decimal
+from typing import Optional
 from sqlmodel import SQLModel
 
 
@@ -15,3 +17,26 @@ class DashboardStats(SQLModel):
     productos_bajo_stock: int
     ingredientes_activos: int
     ingredientes_bajo_stock: int
+
+
+class TicketEvolutionItem(SQLModel):
+    """Ticket promedio por día — para el gráfico de línea."""
+    date: date
+    avg_ticket: Decimal
+
+
+class OrdersByStatus(SQLModel):
+    """Cantidad de pedidos agrupados por estado actual."""
+    pendiente: int
+    confirmado: int
+    en_preparacion: int
+    en_camino: int
+    entregado: int
+    cancelado: int
+
+
+class OrdersByDayItem(SQLModel):
+    """Cantidad de pedidos por día — para el gráfico de barras semanal."""
+    date: date
+    day_name: str
+    count: int
