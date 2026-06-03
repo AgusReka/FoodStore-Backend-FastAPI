@@ -173,7 +173,7 @@ class StatsService:
             pendiente=counts.get(EstadoPedidoEnum.PENDIENTE, 0),
             confirmado=counts.get(EstadoPedidoEnum.CONFIRMADO, 0),
             en_preparacion=counts.get(EstadoPedidoEnum.EN_PREP, 0),
-            en_camino=counts.get(EstadoPedidoEnum.EN_CAMINO, 0),
+            listo=counts.get(EstadoPedidoEnum.LISTO, 0),
             entregado=counts.get(EstadoPedidoEnum.ENTREGADO, 0),
             cancelado=counts.get(EstadoPedidoEnum.CANCELADO, 0),
         )

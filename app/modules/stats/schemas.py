@@ -30,7 +30,7 @@ class OrdersByStatus(SQLModel):
     pendiente: int
     confirmado: int
     en_preparacion: int
-    en_camino: int
+    listo: int
     entregado: int
     cancelado: int
 

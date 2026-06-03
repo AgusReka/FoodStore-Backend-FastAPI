@@ -753,12 +753,12 @@ def seed_pedidos(
                     else EstadoPedidoEnum.ENTREGADO
                 )
             elif dias_antiguedad >= 1:
-                # Pedidos de ayer: CONFIRMADO, EN_PREP, o ya ENTREGADO
+                # Pedidos de ayer: CONFIRMADO, EN_PREP, LISTO o ya ENTREGADO
                 estado_codigo = random.choice(
                     [
                         EstadoPedidoEnum.CONFIRMADO,
                         EstadoPedidoEnum.EN_PREP,
-                        EstadoPedidoEnum.EN_CAMINO,
+                        EstadoPedidoEnum.LISTO,
                         EstadoPedidoEnum.ENTREGADO,
                     ]
                 )
@@ -817,7 +817,7 @@ def seed_pedidos(
                 EstadoPedidoEnum.PENDIENTE,
                 EstadoPedidoEnum.CONFIRMADO,
                 EstadoPedidoEnum.EN_PREP,
-                EstadoPedidoEnum.EN_CAMINO,
+                EstadoPedidoEnum.LISTO,
                 EstadoPedidoEnum.ENTREGADO,
             ]
 
