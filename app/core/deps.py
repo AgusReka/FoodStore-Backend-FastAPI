@@ -183,3 +183,4 @@ def require_role(allowed_roles: list[RoleCode]):
 require_admin = require_role([RoleCode.ADMIN])
 require_admin_or_stock = require_role([RoleCode.ADMIN, RoleCode.STOCK])
 require_admin_or_pedidos = require_role([RoleCode.ADMIN, RoleCode.PEDIDOS])
+require_pedido_staff = require_role([RoleCode.ADMIN, RoleCode.PEDIDOS, RoleCode.COCINA])

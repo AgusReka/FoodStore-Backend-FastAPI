@@ -24,7 +24,7 @@ PENDING_STATES = (
     EstadoPedidoEnum.PENDIENTE,
     EstadoPedidoEnum.CONFIRMADO,
     EstadoPedidoEnum.EN_PREP,
-    EstadoPedidoEnum.EN_CAMINO,
+    EstadoPedidoEnum.LISTO,
 )
 
 

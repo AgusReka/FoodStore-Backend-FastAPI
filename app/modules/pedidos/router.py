@@ -1,8 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import json
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from typing import Annotated, Optional, List
 from sqlmodel import Session
-from app.core.database import get_session
-from app.core.deps import get_current_active_user, require_admin_or_pedidos
+from app.core.database import get_session, engine
+from app.core.deps import (
+    get_current_active_user,
+    require_admin_or_pedidos,
+    require_pedido_staff,
+)
+from app.core.security import decode_access_token
+from app.core.unit_of_work import UnitOfWork
+from app.core.websocket import manager
 from app.core.roles import RoleCode
 from app.modules.user.models import User
 from app.modules.pedidos.service import PedidoService
@@ -14,7 +31,6 @@ from app.modules.pedidos.schemas import (
     CambioEstadoRequest,
     HistorialEstadoPedidoPublic,
     EstadoPedidoPublic,
-    EstadoPedidoEnum
 )
 
 router = APIRouter(
@@ -196,18 +212,20 @@ def cancelar_pedido(
 def update_pedido_estado(
     pedido_id: int,
     cambio: CambioEstadoRequest,
-    current_user: Annotated[User, Depends(require_admin_or_pedidos)],
+    current_user: Annotated[User, Depends(require_pedido_staff)],
     svc: PedidoService = Depends(get_pedido_service)
 ) -> PedidoPublic:
     """
-    Valida transiciones permitidas
+    Valida transiciones permitidas según el rol del usuario (persistidas en DB)
     Registra quién hizo el cambio y cuándo
-    Solo administradores y personal de pedidos pueden cambiar el estado.
+    Solo ADMIN, PEDIDOS y COCINA pueden cambiar el estado.
     """
+    roles: list[str] = getattr(current_user, "_roles_from_token", [])
     return svc.cambiar_estado_pedido(
         pedido_id=pedido_id,
         cambio=cambio,
-        usuario_cambio_id=current_user.id
+        usuario_cambio_id=current_user.id,
+        roles=roles
     )
 
 
@@ -233,3 +251,117 @@ def update_pedido(
         pedido_in=pedido_in,
         usuario_id=current_user.id
     )
+
+
+# ─── Roles de staff que tienen cola propia en el WebSocket ────────────────────
+STAFF_ROLES = {RoleCode.ADMIN, RoleCode.PEDIDOS, RoleCode.COCINA}
+
+
+@router.websocket("/ws")
+async def pedidos_websocket(websocket: WebSocket) -> None:
+    """
+    WebSocket /api/v1/pedidos/ws — canal en tiempo real autenticado.
+
+    Handshake:
+      1. Valida el JWT desde la cookie HttpOnly `access_token`.
+      2. Valida el usuario contra la BD (existe y no está deshabilitado).
+      3. Une el socket a la room `role:{ROL}` de cada rol staff del token.
+
+    Rooms:
+      - role:{ROL}  → cola de trabajo del rol (la alimenta el PedidoService).
+      - order:{id}  → un cliente sigue en vivo SU propio pedido.
+
+    Acciones del cliente (texto JSON):
+      - {"action": "subscribe-order",   "order_id": <int>}
+      - {"action": "unsubscribe-order", "order_id": <int>}
+    """
+    # PASO 1 · token desde la cookie
+    token = websocket.cookies.get("access_token")
+    if not token:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Token de autenticación requerido")
+        return
+
+    # PASO 2 · decodificar y validar el JWT
+    payload = decode_access_token(token)
+    if not payload:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Token inválido o expirado")
+        return
+
+    username = payload.get("sub")
+    if not username:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="Token inválido")
+        return
+
+    roles: list[str] = payload.get("roles", [])
+
+    # PASO 3 · validar usuario en la BD (puede haber sido borrado/deshabilitado)
+    with Session(engine) as db_session:
+        user = UnitOfWork(db_session).users.get_by_username(username)
+        if not user or user.disabled:
+            await websocket.accept()
+            await websocket.close(code=1008, reason="Usuario inválido o inactivo")
+            return
+        # Extraer primitivos dentro de la sesión (evita DetachedInstanceError)
+        user_id: int = user.id
+
+    # PASO 4 · registrar conexión y unir a las rooms de rol
+    # (el event loop ya quedó bindeado en el lifespan de la app)
+    await manager.connect(websocket)
+
+    es_staff = any(r in STAFF_ROLES for r in roles)
+    for rol in roles:
+        if rol in STAFF_ROLES:
+            manager.join_role_room(websocket, rol)
+
+    # PASO 5 · bucle de escucha
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            action = msg.get("action")
+
+            if action == "subscribe-order":
+                order_id = msg.get("order_id")
+                if not isinstance(order_id, int):
+                    continue
+
+                # El cliente solo puede seguir SUS pedidos. Validamos propiedad
+                # reutilizando el PedidoService (no acceso crudo a la BD).
+                if not es_staff:
+                    with Session(engine) as db_session:
+                        svc = PedidoService(db_session)
+                        try:
+                            svc.get_pedido_by_id(
+                                pedido_id=order_id,
+                                usuario_id=user_id,
+                                es_admin=False,
+                            )
+                        except HTTPException as exc:
+                            await websocket.send_json({
+                                "event": "ERROR",
+                                "data": {"detail": exc.detail},
+                            })
+                            continue
+
+                manager.join_order_room(websocket, order_id)
+                await websocket.send_json({
+                    "event": "SUBSCRIBED",
+                    "data": {"order_id": order_id},
+                })
+
+            elif action == "unsubscribe-order":
+                order_id = msg.get("order_id")
+                if isinstance(order_id, int):
+                    manager.leave_order_room(websocket, order_id)
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)

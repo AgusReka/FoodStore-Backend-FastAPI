@@ -8,7 +8,7 @@ class EstadoPedidoEnum(str, Enum):
     PENDIENTE = "PENDIENTE"
     CONFIRMADO = "CONFIRMADO"
     EN_PREP = "EN_PREP"
-    EN_CAMINO = "EN_CAMINO"
+    LISTO = "LISTO"
     ENTREGADO = "ENTREGADO"
     CANCELADO = "CANCELADO"
     

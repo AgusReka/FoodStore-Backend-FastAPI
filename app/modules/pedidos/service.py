@@ -12,18 +12,80 @@ from app.modules.pedidos.models import (
 from app.modules.pedidos.schemas import (
     PedidoCreate,
     PedidoUpdate,
+    PedidoPublic,
     CambioEstadoRequest,
     EstadoPedidoEnum,
 )
 from app.modules.product.models import Product
 from app.modules.product.repository import ProductRepository
 from app.modules.ingredient.repository import IngredientRepository
+from app.core.websocket import manager
 
 
 class PedidoService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def _build_notificaciones(
+        self,
+        uow: OrderUnitOfWork,
+        pedido: Pedido,
+        estado_nuevo_id: int,
+        estado_anterior_id: Optional[int] = None,
+        event: str = "PEDIDO_ENTRANTE",
+    ) -> List[tuple]:
+        """Prepara las notificaciones WebSocket SIN emitirlas todavía.
+
+        Debe llamarse DENTRO del bloque UoW (sesión viva): serializa el pedido a
+        `PedidoPublic` para evitar `DetachedInstanceError` y forzar el lazy-load
+        de `detalles`/`estado_actual`, y resuelve las rooms destino. El payload
+        queda materializado para emitirse luego del commit (ver
+        `_emit_notificaciones`), evitando avisar sobre datos no commiteados.
+
+        - El rol que gestiona el estado NUEVO recibe el objeto completo.
+        - El rol que gestionaba el estado anterior (y ya no el nuevo) recibe un
+          aviso liviano para sacarlo de su cola.
+        - El cliente dueño suscripto a `order:{id}` recibe el estado nuevo.
+
+        Devuelve una lista de tuplas `("roles", roles, msg)` / `("order", id, msg)`.
+        """
+        data = PedidoPublic.model_validate(pedido).model_dump(mode="json")
+        notifs: List[tuple] = []
+
+        roles_nuevo = uow.transiciones.roles_por_estado_origen(estado_nuevo_id)
+        if roles_nuevo:
+            notifs.append(("roles", roles_nuevo, {"event": event, "data": data}))
+
+        if estado_anterior_id is not None:
+            roles_viejo = uow.transiciones.roles_por_estado_origen(estado_anterior_id)
+            roles_salientes = roles_viejo - roles_nuevo
+            if roles_salientes:
+                notifs.append(
+                    (
+                        "roles",
+                        roles_salientes,
+                        {
+                            "event": "PEDIDO_REMOVIDO",
+                            "data": {
+                                "pedido_id": pedido.id,
+                                "estado_nuevo": data["estado_codigo"],
+                            },
+                        },
+                    )
+                )
+
+        notifs.append(
+            ("order", pedido.id, {"event": "PEDIDO_ESTADO", "data": data})
+        )
+        return notifs
+
+    def _emit_notificaciones(self, notifs: List[tuple]) -> None:
+        """Emite las notificaciones preparadas. Llamar DESPUÉS del commit."""
+        for kind, target, msg in notifs:
+            if kind == "roles":
+                manager.notify_roles(target, msg)
+            else:
+                manager.notify(f"order:{target}", msg)
 
     def crear_pedido(self, usuario_id: int, pedido_in: PedidoCreate) -> Pedido:
         with OrderUnitOfWork(self._session) as uow:
@@ -62,7 +124,8 @@ class PedidoService:
                     for link in ingredient_links:
                         required = link.quantity * detalle_in.cantidad
                         ingredient_requirements[link.ingredient_id] = (
-                            ingredient_requirements.get(link.ingredient_id, 0) + required
+                            ingredient_requirements.get(link.ingredient_id, 0)
+                            + required
                         )
                 else:
                     # Producto independiente: se descuenta directamente del stock del producto
@@ -80,18 +143,22 @@ class PedidoService:
                 subtotal_detalle = precio_unitario * detalle_in.cantidad
                 subtotal += subtotal_detalle
 
-                detalles_a_crear.append({
-                    "producto_id": detalle_in.producto_id,
-                    "producto_nombre": producto.name,
-                    "producto_precio_unitario": precio_unitario,
-                    "cantidad": detalle_in.cantidad,
-                    "subtotal": subtotal_detalle,
-                })
+                detalles_a_crear.append(
+                    {
+                        "producto_id": detalle_in.producto_id,
+                        "producto_nombre": producto.name,
+                        "producto_precio_unitario": precio_unitario,
+                        "cantidad": detalle_in.cantidad,
+                        "subtotal": subtotal_detalle,
+                    }
+                )
 
             if ingredient_requirements:
                 required_ingredient_ids = list(ingredient_requirements.keys())
                 ingredients = ingredient_repo.get_all_in(required_ingredient_ids)
-                missing_ingredients = set(required_ingredient_ids) - {ing.id for ing in ingredients}
+                missing_ingredients = set(required_ingredient_ids) - {
+                    ing.id for ing in ingredients
+                }
                 if missing_ingredients:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
@@ -145,8 +212,16 @@ class PedidoService:
                 observaciones="Pedido creado exitosamente",
             )
 
-            return pedido
+            notifs = self._build_notificaciones(
+                uow,
+                pedido,
+                estado_nuevo_id=pedido.estado_id,
+                event="NUEVO_PEDIDO",
+            )
 
+        # Fuera del with → la transacción ya commiteó (si falló, no llegamos acá)
+        self._emit_notificaciones(notifs)
+        return pedido
 
     def get_pedido_by_id(
         self, pedido_id: int, usuario_id: Optional[int] = None, es_admin: bool = False
@@ -182,22 +257,14 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             return uow.pedidos.get_all_admin(estado_id, usuario_id, offset, limit)
 
-
-    TRANSICIONES_VALIDAS = {
-        EstadoPedidoEnum.PENDIENTE: [EstadoPedidoEnum.CONFIRMADO, EstadoPedidoEnum.CANCELADO],
-        EstadoPedidoEnum.CONFIRMADO: [EstadoPedidoEnum.EN_PREP, EstadoPedidoEnum.CANCELADO],
-        EstadoPedidoEnum.EN_PREP: [EstadoPedidoEnum.EN_CAMINO],
-        EstadoPedidoEnum.EN_CAMINO: [EstadoPedidoEnum.ENTREGADO],
-        EstadoPedidoEnum.ENTREGADO: [],
-        EstadoPedidoEnum.CANCELADO: [],
-    }
-
     def cambiar_estado_pedido(
         self,
         pedido_id: int,
         cambio: CambioEstadoRequest,
         usuario_cambio_id: Optional[int] = None,
+        roles: Optional[List[str]] = None,
     ) -> Pedido:
+
         with OrderUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido or pedido.deleted_at is not None:
@@ -215,14 +282,38 @@ class PedidoService:
                     detail=f"Estado '{cambio.nuevo_estado.value}' no existe",
                 )
 
-            if nuevo_estado.codigo not in self.TRANSICIONES_VALIDAS.get(estado_actual.codigo, []):
-                permitidos = [e.value for e in self.TRANSICIONES_VALIDAS.get(estado_actual.codigo, [])]
+            if estado_actual == nuevo_estado:
+                return pedido
+
+            roles = roles or []
+            permitidos = uow.transiciones.roles_permitidos(
+                estado_actual.id, nuevo_estado.id
+            )
+
+            # La transición no existe para ningún rol → no es parte de la máquina de estados
+            if not permitidos:
+                destinos = [
+                    e.codigo.value
+                    for e in uow.transiciones.destinos_validos(
+                        estado_actual.id, roles
+                    )
+                ]
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         f"Transición inválida: de '{estado_actual.codigo.value}' "
                         f"no se puede ir a '{nuevo_estado.codigo.value}'. "
-                        f"Estados permitidos: {permitidos}"
+                        f"Estados permitidos para tu rol: {destinos}"
+                    ),
+                )
+
+            # La transición existe pero ninguno de los roles del usuario la permite
+            if not any(r in permitidos for r in roles):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Transición no permitida para tu rol: "
+                        f"'{estado_actual.codigo.value}' → '{nuevo_estado.codigo.value}'"
                     ),
                 )
 
@@ -243,7 +334,15 @@ class PedidoService:
                 observaciones=cambio.observaciones,
             )
 
-            return pedido
+            notifs = self._build_notificaciones(
+                uow,
+                pedido,
+                estado_nuevo_id=nuevo_estado.id,
+                estado_anterior_id=estado_actual.id,
+            )
+
+        self._emit_notificaciones(notifs)
+        return pedido
 
     def cancelar_pedido(self, pedido_id: int, usuario_id: int) -> Pedido:
         with OrderUnitOfWork(self._session) as uow:
@@ -282,9 +381,19 @@ class PedidoService:
                 observaciones="Cancelado por el cliente",
             )
 
-            return pedido
+            notifs = self._build_notificaciones(
+                uow,
+                pedido,
+                estado_nuevo_id=nuevo_estado.id,
+                estado_anterior_id=estado_actual.id,
+            )
 
-    def update_pedido(self, pedido_id: int, pedido_in: PedidoUpdate, usuario_id: int) -> Pedido:
+        self._emit_notificaciones(notifs)
+        return pedido
+
+    def update_pedido(
+        self, pedido_id: int, pedido_in: PedidoUpdate, usuario_id: int
+    ) -> Pedido:
         with OrderUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido or pedido.deleted_at is not None:
@@ -312,7 +421,6 @@ class PedidoService:
             pedido.updated_at = datetime.now(timezone.utc)
             uow.pedidos.update(pedido.id, pedido)
             return pedido
-
 
     def _registrar_cambio_estado(
         self,
@@ -360,7 +468,6 @@ class PedidoService:
                 if not producto.available and producto.stock_quantity > 0:
                     producto.available = True
                 product_repo.update(producto.id, producto)
-
 
     def count_pedidos_by_usuario(self, usuario_id: int) -> int:
         with OrderUnitOfWork(self._session) as uow:

@@ -1,7 +1,10 @@
+import asyncio
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.seed import run_seed
+from app.db.seed import run_seed
+from app.core.websocket import manager
 from contextlib import asynccontextmanager
 from app.modules.category.router import router as category_router
 from app.modules.ingredient.router import router as ingredient_router
@@ -17,8 +20,12 @@ from app.modules.stats.router import router as stats_router
 async def lifespan(app: FastAPI):
     try:
         run_seed()
+        # Guardar el event loop principal para que las notificaciones WebSocket
+        # disparadas desde endpoints/services síncronos puedan agendarse.
+        manager.bind_loop(asyncio.get_running_loop())
     except Exception as e:
         print(f"[seed] Warning: {e}")
+
     yield
 
 
@@ -31,7 +38,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",  # React dev
-    "http://localhost:5173",  #Cliente
+    "http://localhost:5173",  # Cliente
     "http://localhost:5174",  # Admin
     "http://127.0.0.1:5173",
 ]

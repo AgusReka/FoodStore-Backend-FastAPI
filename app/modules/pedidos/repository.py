@@ -7,6 +7,7 @@ from app.modules.pedidos.models import (
     DetallePedido,
     EstadoPedido,
     HistorialEstadoPedido,
+    TransicionEstado,
 )
 from app.modules.pedidos.schemas import EstadoPedidoEnum
 
@@ -29,7 +30,62 @@ class EstadoPedidoRepository(BaseRepository[EstadoPedido]):
                 select(EstadoPedido).order_by(EstadoPedido.orden)
             ).all()
         )
-        
+
+
+class TransicionEstadoRepository(BaseRepository[TransicionEstado]):
+    """Repository para las reglas de transición de estado por rol."""
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, TransicionEstado)
+
+    def roles_permitidos(self, origen_id: int, destino_id: int) -> set[str]:
+        """Roles que tienen permitida la transición origen → destino."""
+        return set(
+            self.session.exec(
+                select(TransicionEstado.rol_code).where(
+                    TransicionEstado.estado_origen_id == origen_id,
+                    TransicionEstado.estado_destino_id == destino_id,
+                )
+            ).all()
+        )
+
+    def roles_por_estado_origen(self, origen_id: int) -> set[str]:
+        """Roles que gestionan un estado = los que pueden operar *desde* él.
+
+        Es la "cola de trabajo" de cada rol: si un rol puede mover un pedido
+        a partir de `origen_id`, entonces ese estado le pertenece y se le debe
+        notificar cuando un pedido entra ahí.
+        """
+        return set(
+            self.session.exec(
+                select(TransicionEstado.rol_code).where(
+                    TransicionEstado.estado_origen_id == origen_id,
+                )
+            ).all()
+        )
+
+    def destinos_validos(
+        self, origen_id: int, roles: list[str]
+    ) -> List[EstadoPedido]:
+        """Estados destino alcanzables desde `origen_id` con alguno de los roles dados."""
+        if not roles:
+            return []
+        return list(
+            self.session.exec(
+                select(EstadoPedido)
+                .join(
+                    TransicionEstado,
+                    TransicionEstado.estado_destino_id == EstadoPedido.id,
+                )
+                .where(
+                    TransicionEstado.estado_origen_id == origen_id,
+                    TransicionEstado.rol_code.in_(roles),
+                )
+                .distinct()
+            ).all()
+        )
+
+
 class DetallePedidoRepository(BaseRepository[DetallePedido]):
     """Repository para detalles de pedido."""
     

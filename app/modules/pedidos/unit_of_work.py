@@ -5,6 +5,7 @@ from app.modules.pedidos.repository import (
     DetallePedidoRepository,
     EstadoPedidoRepository,
     HistorialEstadoPedidoRepository,
+    TransicionEstadoRepository,
 )
 
 
@@ -15,6 +16,7 @@ class OrderUnitOfWork(UnitOfWork):
         self.detalles = DetallePedidoRepository(session)
         self.estados = EstadoPedidoRepository(session)
         self.historial = HistorialEstadoPedidoRepository(session)
+        self.transiciones = TransicionEstadoRepository(session)
 
     def refresh(self, entity) -> None:
         self._session.refresh(entity)

@@ -17,3 +17,4 @@ class RoleCode(StrEnum):
     ADMIN = "ADMIN"
     STOCK = "STOCK"
     PEDIDOS = "PEDIDOS"
+    COCINA = "COCINA"
