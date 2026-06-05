@@ -21,10 +21,19 @@ from app.modules.product.repository import ProductRepository
 from app.modules.ingredient.repository import IngredientRepository
 from app.core.websocket import manager
 
+COSTO_ENVIO_DELIVERY = Decimal("500.00")
+
 
 class PedidoService:
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def get_costo_envio_config(self) -> dict:
+        """Expone la configuración de costo de envío para el frontend."""
+        return {
+            "delivery": float(COSTO_ENVIO_DELIVERY),
+            "pickup": 0.0,
+        }
 
     def _build_notificaciones(
         self,
@@ -186,7 +195,6 @@ class PedidoService:
                     producto.available = False
                 product_repo.update(producto.id, producto)
 
-            COSTO_ENVIO_DELIVERY = Decimal("500.00")
             costo_envio = COSTO_ENVIO_DELIVERY if pedido_in.tipo_envio == "delivery" else Decimal("0.00")
             total = subtotal + costo_envio
 

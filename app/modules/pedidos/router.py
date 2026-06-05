@@ -49,6 +49,18 @@ def get_pedido_service(session: Session = Depends(get_session)) -> PedidoService
     return PedidoService(session)
 
 
+@router.get(
+    "/costo-envio",
+    summary="Obtener costo de envío actual",
+    description="Devuelve el costo de envío según el tipo. El frontend lo usa SOLO para display.",
+)
+def get_costo_envio(
+    svc: PedidoService = Depends(get_pedido_service),
+) -> dict:
+    """El backend es la única fuente de verdad para el costo de envío."""
+    return svc.get_costo_envio_config()
+
+
 @router.post(
     "/",
     response_model=PedidoPublic,
