@@ -186,10 +186,11 @@ class PedidoService:
                     producto.available = False
                 product_repo.update(producto.id, producto)
 
-            costo_envio = Decimal("0.00")
+            COSTO_ENVIO_DELIVERY = Decimal("500.00")
+            costo_envio = COSTO_ENVIO_DELIVERY if pedido_in.tipo_envio == "delivery" else Decimal("0.00")
             total = subtotal + costo_envio
 
-            pedido_data = pedido_in.model_dump(exclude={"detalles"})
+            pedido_data = pedido_in.model_dump(exclude={"detalles", "tipo_envio"})
             pedido = Pedido(
                 **pedido_data,
                 usuario_id=usuario_id,
