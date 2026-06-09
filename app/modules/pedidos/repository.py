@@ -1,5 +1,7 @@
 from sqlmodel import Session, select
 from sqlmodel.sql.expression import SelectOfScalar
+from sqlalchemy import or_, and_, false
+from datetime import datetime
 from typing import List, Optional
 from app.core.repository import BaseRepository
 from app.modules.pedidos.models import (
@@ -45,21 +47,6 @@ class TransicionEstadoRepository(BaseRepository[TransicionEstado]):
                 select(TransicionEstado.rol_code).where(
                     TransicionEstado.estado_origen_id == origen_id,
                     TransicionEstado.estado_destino_id == destino_id,
-                )
-            ).all()
-        )
-
-    def roles_por_estado_origen(self, origen_id: int) -> set[str]:
-        """Roles que gestionan un estado = los que pueden operar *desde* él.
-
-        Es la "cola de trabajo" de cada rol: si un rol puede mover un pedido
-        a partir de `origen_id`, entonces ese estado le pertenece y se le debe
-        notificar cuando un pedido entra ahí.
-        """
-        return set(
-            self.session.exec(
-                select(TransicionEstado.rol_code).where(
-                    TransicionEstado.estado_origen_id == origen_id,
                 )
             ).all()
         )
@@ -169,6 +156,60 @@ class PedidoRepository(BaseRepository[Pedido]):
             ).all()
         )
     
+    def _cola_filtro(
+        self,
+        activos_ids: list[int],
+        terminales_ids: Optional[list[int]] = None,
+        recientes_desde: Optional[datetime] = None,
+    ):
+        """Filtro del tablero por rol: estados activos (sin bound temporal) +
+        estados terminales acotados a `recientes_desde` (últimas 24h)."""
+        filtro = Pedido.estado_id.in_(activos_ids) if activos_ids else false()
+        if terminales_ids and recientes_desde is not None:
+            filtro = or_(
+                filtro,
+                and_(
+                    Pedido.estado_id.in_(terminales_ids),
+                    Pedido.updated_at >= recientes_desde,
+                ),
+            )
+        return filtro
+
+    def get_cola(
+        self,
+        activos_ids: list[int],
+        terminales_ids: Optional[list[int]] = None,
+        recientes_desde: Optional[datetime] = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> List[Pedido]:
+        """Tablero del rol: pedidos en `activos_ids` + terminales recientes."""
+        filtro = self._cola_filtro(activos_ids, terminales_ids, recientes_desde)
+        return list(
+            self.session.exec(
+                select(Pedido)
+                .where(Pedido.deleted_at.is_(None))
+                .where(filtro)
+                .order_by(Pedido.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            ).all()
+        )
+
+    def count_cola(
+        self,
+        activos_ids: list[int],
+        terminales_ids: Optional[list[int]] = None,
+        recientes_desde: Optional[datetime] = None,
+    ) -> int:
+        """Cuenta los pedidos del tablero del rol (mismo filtro que `get_cola`)."""
+        filtro = self._cola_filtro(activos_ids, terminales_ids, recientes_desde)
+        return len(
+            self.session.exec(
+                select(Pedido).where(Pedido.deleted_at.is_(None)).where(filtro)
+            ).all()
+        )
+
     def count_by_usuario(self, usuario_id: int) -> int:
         """Cuenta los pedidos de un usuario."""
         return len(

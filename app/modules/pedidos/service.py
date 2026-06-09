@@ -1,6 +1,6 @@
 from sqlmodel import Session
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from fastapi import HTTPException, status
 from app.modules.pedidos.unit_of_work import OrderUnitOfWork
@@ -13,13 +13,46 @@ from app.modules.pedidos.schemas import (
     PedidoCreate,
     PedidoUpdate,
     PedidoPublic,
+    PedidoList,
     CambioEstadoRequest,
     EstadoPedidoEnum,
 )
 from app.modules.product.models import Product
 from app.modules.product.repository import ProductRepository
 from app.modules.ingredient.repository import IngredientRepository
+from app.core.roles import RoleCode
 from app.core.websocket import manager
+
+
+# ─── Visibilidad por rol ──────────────────────────────────────────────────────
+# Qué estados quiere VER cada rol staff (distinto de qué puede *operar*, que se
+# valida con la tabla `transicion_estado`). Alimenta tanto la carga inicial
+# (`/cola`) como el ruteo de notificaciones del WebSocket, para que el front
+# ubique cada pedido por `estado_codigo` en la sección correcta.
+_E = EstadoPedidoEnum
+
+# Estados terminales: solo se muestran acotados a las últimas 24h en la carga
+# inicial (en el WS, la transición terminal recién ocurrida siempre es reciente).
+ESTADOS_TERMINALES: set[EstadoPedidoEnum] = {_E.CANCELADO, _E.ENTREGADO}
+
+ROLE_VISIBILITY: dict[str, set[EstadoPedidoEnum]] = {
+    RoleCode.PEDIDOS: {_E.PENDIENTE, _E.CONFIRMADO, _E.EN_PREP, _E.LISTO, _E.CANCELADO, _E.ENTREGADO},
+    RoleCode.COCINA: {_E.CONFIRMADO, _E.EN_PREP},
+    RoleCode.ADMIN: {_E.PENDIENTE, _E.CONFIRMADO, _E.EN_PREP, _E.LISTO, _E.CANCELADO, _E.ENTREGADO},
+}
+
+
+def roles_que_ven(codigo: EstadoPedidoEnum) -> set[str]:
+    """Roles cuyo tablero incluye `codigo` (a quién notificar/UPSERT)."""
+    return {rol for rol, estados in ROLE_VISIBILITY.items() if codigo in estados}
+
+
+def estados_visibles(roles: List[str]) -> set[EstadoPedidoEnum]:
+    """Unión de estados visibles para los roles dados (tablero del usuario)."""
+    visibles: set[EstadoPedidoEnum] = set()
+    for rol in roles:
+        visibles |= ROLE_VISIBILITY.get(rol, set())
+    return visibles
 
 
 class PedidoService:
@@ -28,55 +61,46 @@ class PedidoService:
 
     def _build_notificaciones(
         self,
-        uow: OrderUnitOfWork,
         pedido: Pedido,
-        estado_nuevo_id: int,
-        estado_anterior_id: Optional[int] = None,
-        event: str = "PEDIDO_ENTRANTE",
+        estado_nuevo_codigo: EstadoPedidoEnum,
+        estado_anterior_codigo: Optional[EstadoPedidoEnum] = None,
     ) -> List[tuple]:
         """Prepara las notificaciones WebSocket SIN emitirlas todavía.
 
         Debe llamarse DENTRO del bloque UoW (sesión viva): serializa el pedido a
         `PedidoPublic` para evitar `DetachedInstanceError` y forzar el lazy-load
-        de `detalles`/`estado_actual`, y resuelve las rooms destino. El payload
-        queda materializado para emitirse luego del commit (ver
-        `_emit_notificaciones`), evitando avisar sobre datos no commiteados.
+        de `detalles`/`estado_actual`. El payload queda materializado para
+        emitirse luego del commit (ver `_emit_notificaciones`), evitando avisar
+        sobre datos no commiteados.
 
-        - El rol que gestiona el estado NUEVO recibe el objeto completo.
-        - El rol que gestionaba el estado anterior (y ya no el nuevo) recibe un
-          aviso liviano para sacarlo de su cola.
-        - El cliente dueño suscripto a `order:{id}` recibe el estado nuevo.
+        El ruteo es por **visibilidad** (`ROLE_VISIBILITY`), no por operabilidad:
+        un rol recibe el pedido si su tablero incluye el estado correspondiente.
+        Todos los mensajes comparten el shape `{event, id, data}` con el
+        `PedidoPublic` completo en `data`, para que el front mantenga sus listas
+        por `id`:
+        - Roles que ven el estado NUEVO reciben `UPSERT` (agregar/actualizar).
+        - Roles que veían el estado anterior (y ya no el nuevo) reciben `REMOVE`.
+        - El cliente dueño suscripto a `order:{id}` recibe `PEDIDO_ESTADO`.
 
         Devuelve una lista de tuplas `("roles", roles, msg)` / `("order", id, msg)`.
         """
         data = PedidoPublic.model_validate(pedido).model_dump(mode="json")
+
+        def msg(event: str) -> dict:
+            return {"event": event, "id": pedido.id, "data": data}
+
         notifs: List[tuple] = []
 
-        roles_nuevo = uow.transiciones.roles_por_estado_origen(estado_nuevo_id)
+        roles_nuevo = roles_que_ven(estado_nuevo_codigo)
         if roles_nuevo:
-            notifs.append(("roles", roles_nuevo, {"event": event, "data": data}))
+            notifs.append(("roles", roles_nuevo, msg("UPSERT")))
 
-        if estado_anterior_id is not None:
-            roles_viejo = uow.transiciones.roles_por_estado_origen(estado_anterior_id)
-            roles_salientes = roles_viejo - roles_nuevo
+        if estado_anterior_codigo is not None:
+            roles_salientes = roles_que_ven(estado_anterior_codigo) - roles_nuevo
             if roles_salientes:
-                notifs.append(
-                    (
-                        "roles",
-                        roles_salientes,
-                        {
-                            "event": "PEDIDO_REMOVIDO",
-                            "data": {
-                                "pedido_id": pedido.id,
-                                "estado_nuevo": data["estado_codigo"],
-                            },
-                        },
-                    )
-                )
+                notifs.append(("roles", roles_salientes, msg("REMOVE")))
 
-        notifs.append(
-            ("order", pedido.id, {"event": "PEDIDO_ESTADO", "data": data})
-        )
+        notifs.append(("order", pedido.id, msg("PEDIDO_ESTADO")))
         return notifs
 
     def _emit_notificaciones(self, notifs: List[tuple]) -> None:
@@ -213,10 +237,8 @@ class PedidoService:
             )
 
             notifs = self._build_notificaciones(
-                uow,
                 pedido,
-                estado_nuevo_id=pedido.estado_id,
-                event="NUEVO_PEDIDO",
+                estado_nuevo_codigo=EstadoPedidoEnum.PENDIENTE,
             )
 
         # Fuera del with → la transacción ya commiteó (si falló, no llegamos acá)
@@ -246,6 +268,49 @@ class PedidoService:
     ) -> List[Pedido]:
         with OrderUnitOfWork(self._session) as uow:
             return uow.pedidos.get_by_usuario_id(usuario_id, offset, limit)
+
+    def get_cola_staff(
+        self,
+        roles: List[str],
+        offset: int = 0,
+        limit: int = 50,
+    ) -> PedidoList:
+        """Tablero inicial del staff: pedidos en los estados que VE su rol.
+
+        Usa `ROLE_VISIBILITY` (la misma fuente de verdad que rutea el WS), de
+        modo que la lista inicial sea consistente con los eventos `UPSERT`/
+        `REMOVE` posteriores. Los estados terminales (`CANCELADO`/`ENTREGADO`)
+        se acotan a las últimas 24h; el resto se trae sin bound temporal. El
+        front separa el resultado por `estado_codigo` en secciones.
+        """
+        codigos = estados_visibles(roles)
+        with OrderUnitOfWork(self._session) as uow:
+            # Mapear código → id de estado
+            codigo_a_id = {e.codigo: e.id for e in uow.estados.get_all_ordered()}
+            activos_ids = [
+                codigo_a_id[c]
+                for c in codigos - ESTADOS_TERMINALES
+                if c in codigo_a_id
+            ]
+            terminales_ids = [
+                codigo_a_id[c]
+                for c in codigos & ESTADOS_TERMINALES
+                if c in codigo_a_id
+            ]
+            recientes_desde = (
+                datetime.now(timezone.utc) - timedelta(hours=24)
+                if terminales_ids
+                else None
+            )
+
+            pedidos = uow.pedidos.get_cola(
+                activos_ids, terminales_ids, recientes_desde, offset, limit
+            )
+            total = uow.pedidos.count_cola(
+                activos_ids, terminales_ids, recientes_desde
+            )
+            data = [PedidoPublic.model_validate(p) for p in pedidos]
+            return PedidoList(data=data, total=total)
 
     def get_all_pedidos_admin(
         self,
@@ -335,10 +400,9 @@ class PedidoService:
             )
 
             notifs = self._build_notificaciones(
-                uow,
                 pedido,
-                estado_nuevo_id=nuevo_estado.id,
-                estado_anterior_id=estado_actual.id,
+                estado_nuevo_codigo=nuevo_estado.codigo,
+                estado_anterior_codigo=estado_actual.codigo,
             )
 
         self._emit_notificaciones(notifs)
@@ -382,10 +446,9 @@ class PedidoService:
             )
 
             notifs = self._build_notificaciones(
-                uow,
                 pedido,
-                estado_nuevo_id=nuevo_estado.id,
-                estado_anterior_id=estado_actual.id,
+                estado_nuevo_codigo=nuevo_estado.codigo,
+                estado_anterior_codigo=estado_actual.codigo,
             )
 
         self._emit_notificaciones(notifs)

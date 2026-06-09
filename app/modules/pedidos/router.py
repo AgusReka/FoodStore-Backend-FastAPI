@@ -138,6 +138,27 @@ def list_mis_pedidos(
 
 
 @router.get(
+    "/cola",
+    response_model=PedidoList,
+    summary="[STAFF] Cola de pedidos del rol",
+    description="Lista los pedidos en los estados que gestiona el rol del usuario. Es la lista inicial que el front mantiene luego con los eventos UPSERT/REMOVE del WebSocket.",
+)
+def get_cola_pedidos(
+    current_user: Annotated[User, Depends(require_pedido_staff)],
+    svc: PedidoService = Depends(get_pedido_service),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> PedidoList:
+    """
+    Devuelve la "cola de trabajo" del staff según los estados que gestiona su rol
+    (misma lógica rol→estados que alimenta el WebSocket).
+    Solo ADMIN, PEDIDOS y COCINA pueden acceder.
+    """
+    roles: list[str] = getattr(current_user, "_roles_from_token", [])
+    return svc.get_cola_staff(roles=roles, offset=offset, limit=limit)
+
+
+@router.get(
     "/{pedido_id}",
     response_model=PedidoPublic,
     summary="Obtener detalle de pedido",
