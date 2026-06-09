@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from decimal import Decimal
@@ -50,6 +50,7 @@ class PedidoCreate(PedidoBase):
     Incluye la lista de detalles (productos).
     """
     detalles: List[DetallePedidoCreate]
+    tipo_envio: Literal["delivery", "pickup"]
     
 class PedidoUpdate(SQLModel):
     """

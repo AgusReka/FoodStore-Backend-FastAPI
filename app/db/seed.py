@@ -74,37 +74,37 @@ ROLES_INICIALES = [
 USUARIOS_INICIALES = [
     {
         "username": "admin",
-        "full_name": "Administrador del Sistema",
+        "full_name": "Admin Prueba",
         "email": "admin@example.com",
         "password": "Admin1234!",
         "rol_code": "ADMIN",
     },
     {
-        "username": "juan",
-        "full_name": "Juan Pérez",
-        "email": "juan@example.com",
-        "password": "Juan1234!",
+        "username": "cliente",
+        "full_name": "Cliente Prueba",
+        "email": "cliente@example.com",
+        "password": "Cliente1234!",
         "rol_code": "CLIENT",
     },
     {
-        "username": "lionel",
-        "full_name": "Lionel Messi",
-        "email": "lionel@example.com",
-        "password": "Lionel1234!",
+        "username": "stock",
+        "full_name": "Stock Prueba",
+        "email": "stock@example.com",
+        "password": "Stock1234!",
         "rol_code": "STOCK",
     },
     {
-        "username": "pepe",
-        "full_name": "Pepe Argento",
-        "email": "pepe@example.com",
-        "password": "Pepe1234!",
+        "username": "pedidos",
+        "full_name": "Pedidos Prueba",
+        "email": "pedidos@example.com",
+        "password": "Pedidos1234!",
         "rol_code": "PEDIDOS",
     },
     {
-        "username": "carlos",
-        "full_name": "Carlos Cocinero",
-        "email": "carlos@example.com",
-        "password": "Carlos1234!",
+        "username": "cocina",
+        "full_name": "Cocina Prueba",
+        "email": "cocina@example.com",
+        "password": "Cocina1234!",
         "rol_code": "COCINA",
     },
 ]
@@ -689,10 +689,38 @@ def seed_pedidos(
     for p in db.exec(select(Product)).all():
         productos[p.name] = {"id": p.id, "price": p.base_price}
 
-    # Saltar si ya hay pedidos (seed manual con python -m app.core.seed)
+    # Usuarios staff para asignar responsable en el historial
+    staff_users: dict[str, int] = {}
+    roles_rows = db.exec(
+        select(User, UserRol).join(UserRol, UserRol.id_user == User.id)
+    ).all()
+    for user, user_rol in roles_rows:
+        staff_users[user_rol.rol_code] = user.id
+    # Fallback: IDs conocidos por si no se cargaron relaciones
+    if "ADMIN" not in staff_users:
+        for u in db.exec(select(User).where(User.username == "admin")).all():
+            staff_users["ADMIN"] = u.id
+    if "PEDIDOS" not in staff_users:
+        for u in db.exec(select(User).where(User.username == "pedidos")).all():
+            staff_users["PEDIDOS"] = u.id
+    if "COCINA" not in staff_users:
+        for u in db.exec(select(User).where(User.username == "cocina")).all():
+            staff_users["COCINA"] = u.id
+
+    # Mapeo de qué rol hace cada transición (para el historial)
+    ROL_POR_TRANSICION: dict[EstadoPedidoEnum, str] = {
+        EstadoPedidoEnum.PENDIENTE: "ADMIN",    # lo crea el sistema
+        EstadoPedidoEnum.CONFIRMADO: "PEDIDOS",
+        EstadoPedidoEnum.EN_PREP: "COCINA",
+        EstadoPedidoEnum.LISTO: "COCINA",
+        EstadoPedidoEnum.ENTREGADO: "PEDIDOS",
+        EstadoPedidoEnum.CANCELADO: "ADMIN",
+    }
+
+    # Saltar si ya hay pedidos (seed manual con python -m app.db.seed)
     existing = db.exec(select(Pedido.id).limit(1)).first()
     if existing:
-        print("  [=] Pedidos ya existen — regeneralos con: python -m app.core.seed")
+        print("  [=] Pedidos ya existen — borrá la DB o ejecutá: python -m app.db.seed")
         return
 
     now = datetime.now(timezone.utc)
@@ -860,11 +888,13 @@ def seed_pedidos(
                         break
 
             for est, fecha in historial_fechas:
+                rol_key = ROL_POR_TRANSICION.get(est, "ADMIN")
+                usuario_id = staff_users.get(rol_key, 1)  # fallback admin si no se encontró
                 db.add(
                     HistorialEstadoPedido(
                         pedido_id=pedido.id,
                         estado_id=estados[est.value],
-                        usuario_cambio_id=1,  # admin
+                        usuario_cambio_id=usuario_id,
                         observaciones=None,
                         created_at=fecha,
                     )
@@ -911,10 +941,10 @@ def run_seed() -> None:
 
     print("\nUsuarios disponibles para pruebas:")
     print("  admin  / Admin1234!   -> role=ADMIN")
-    print("  juan   / Juan1234!   -> role=CLIENT")
-    print("  lionel / Lionel1234! -> role=STOCK")
-    print("  pepe   / Pepe1234!   -> role=PEDIDOS")
-    print("  carlos / Carlos1234! → role=COCINA")
+    print("  cliente   / Cliente1234!   -> role=CLIENT")
+    print("  stock / Stock1234! -> role=STOCK")
+    print("  pedidos   / Pedidos1234!   -> role=PEDIDOS")
+    print("  cocina / Cocina1234! → role=COCINA")
     print()
 
 
