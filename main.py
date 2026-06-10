@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from app.modules.category.router import router as category_router
 from app.modules.ingredient.router import router as ingredient_router
 from app.modules.product.router import router as product_router
+from app.modules.images.router import router as images_router
 from app.modules.pagos.router import router as pagos_router
 from app.modules.pedidos.router import router as pedidos_router
 from app.modules.direcciones.router import router as direcciones_router
@@ -69,5 +70,6 @@ app.include_router(
     direcciones_router, prefix="/api/v1/direcciones", tags=["Direcciones"]
 )
 app.include_router(product_router, prefix="/api/v1/products", tags=["Product"])
+app.include_router(images_router, prefix="/api/v1/images", tags=["Images"])
 app.include_router(user_router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(stats_router, prefix="/api/v1/stats", tags=["Stats"])
