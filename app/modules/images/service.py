@@ -16,7 +16,7 @@ cloudinary.config(
     secure=True,
 )
 
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/jpg"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
