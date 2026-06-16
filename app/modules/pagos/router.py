@@ -1,15 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi.responses import RedirectResponse
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
-from app.core.deps import require_admin
+from app.core.deps import get_current_active_user, require_admin
+from app.core.config import settings
 from app.modules.user.models import User
-from app.modules.pagos.service import FormaPagoService
+from app.modules.pagos.service import FormaPagoService, PaymentService
 from app.modules.pagos.schemas import (
     FormaPagoCreate,
     FormaPagoUpdate,
     FormaPagoPublic,
-    FormaPagoList
+    FormaPagoList,
+    CrearPreferenciaRequest,
+    CrearPreferenciaResponse,
+    ConfirmarPagoRequest,
+    PagoMPStatusResponse,
 )
 
 router = APIRouter(
@@ -24,6 +30,10 @@ router = APIRouter(
 def get_forma_pago_service(session: Session = Depends(get_session)) -> FormaPagoService:
     """Factory de dependencia: inyecta el servicio con su Session."""
     return FormaPagoService(session)
+
+def get_payment_service(session: Session = Depends(get_session)) -> PaymentService:
+    """Factory de dependencia: inyecta el servicio de MercadoPago con su Session."""
+    return PaymentService(session)
 
 @router.get(
     "/",
@@ -109,3 +119,96 @@ def delete_forma_pago(
         es_admin=True
     )
     return None
+
+
+@router.post(
+    "/create-preference",
+    response_model=CrearPreferenciaResponse,
+    summary="Crear preferencia de pago en MercadoPago",
+    description="Crea una preferencia de pago para un pedido específico."
+)
+def create_preference(
+    req: CrearPreferenciaRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    svc: PaymentService = Depends(get_payment_service)
+) -> CrearPreferenciaResponse:
+    return svc.crear_preferencia(
+        pedido_id=req.pedido_id,
+        usuario_id=current_user.id,
+    )
+
+
+@router.post(
+    "/webhook",
+    summary="Webhook de MercadoPago",
+    description="Endpoint para notificaciones de pago de MercadoPago. Sin autenticación."
+)
+async def mercadopago_webhook(
+    request: Request,
+    svc: PaymentService = Depends(get_payment_service)
+) -> dict:
+    try:
+        body = await request.json()
+        data = body.get("data", {})
+        payment_id = data.get("id")
+    except Exception:
+        try:
+            form = await request.form()
+            payment_id = form.get("id")
+        except Exception:
+            payment_id = None
+
+    if payment_id:
+        try:
+            svc.procesar_notificacion_pago(payment_id=int(payment_id))
+        except Exception:
+            pass
+
+    return {"status": "ok"}
+
+
+@router.post(
+    "/confirm",
+    response_model=PagoMPStatusResponse,
+    summary="Confirmar pago manualmente",
+    description="Verifica el estado de un pago contra MercadoPago y actualiza el pedido."
+)
+def confirm_payment(
+    req: ConfirmarPagoRequest,
+    svc: PaymentService = Depends(get_payment_service)
+) -> PagoMPStatusResponse:
+    return svc.confirmar_pago(
+        pedido_id=req.pedido_id,
+        payment_id=req.payment_id,
+    )
+
+
+STATUS_MAP = {
+    "success": "success",
+    "failure": "failure",
+    "approved": "success",
+    "rejected": "failure",
+    "pending": "success",
+}
+
+@router.get(
+    "/redirect/{pedido_id}/{status}",
+    summary="Redirección post-pago",
+    description="Redirige al frontend después de un pago en MercadoPago."
+)
+def redirect_after_payment(
+    pedido_id: int,
+    status: str,
+    payment_id: Optional[int] = Query(None),
+    request: Request = None,
+):
+    frontend_status = STATUS_MAP.get(status, "success")
+    url = f"{settings.VITE_FRONTEND_URL}/orders/{pedido_id}/{frontend_status}"
+    if request and request.query_params:
+        qs = "&".join(
+            f"{k}={v}" for k, v in request.query_params.items()
+            if k not in ("pedido_id", "status")
+        )
+        if qs:
+            url += f"?{qs}"
+    return RedirectResponse(url=url)

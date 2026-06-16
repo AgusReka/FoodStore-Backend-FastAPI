@@ -1,7 +1,7 @@
 from sqlmodel import Session, select
 from typing import List, Optional
 from app.core.repository import BaseRepository
-from app.modules.pagos.models import FormaPago
+from app.modules.pagos.models import FormaPago, PagoMP
 
 class FormaPagoRepository(BaseRepository[FormaPago]):
     """Repository para formas de pago."""
@@ -39,3 +39,30 @@ class FormaPagoRepository(BaseRepository[FormaPago]):
         if not include_deleted:
             query = query.where(FormaPago.deleted_at.is_(None))
         return len(self.session.exec(query).all())
+
+
+class PagoMPRepository(BaseRepository[PagoMP]):
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, PagoMP)
+
+    def get_by_pedido(self, pedido_id: int) -> Optional[PagoMP]:
+        return self.session.exec(
+            select(PagoMP).where(PagoMP.pedido_id == pedido_id)
+        ).first()
+
+    def get_by_mp_payment_id(self, mp_payment_id: int) -> Optional[PagoMP]:
+        return self.session.exec(
+            select(PagoMP).where(PagoMP.mp_payment_id == mp_payment_id)
+        ).first()
+
+    def get_by_idempotency_key(self, key: str) -> Optional[PagoMP]:
+        return self.session.exec(
+            select(PagoMP).where(PagoMP.idempotency_key == key)
+        ).first()
+
+    def get_latest_by_pedido(self, pedido_id: int) -> Optional[PagoMP]:
+        return self.session.exec(
+            select(PagoMP)
+            .where(PagoMP.pedido_id == pedido_id)
+            .order_by(PagoMP.created_at.desc())
+        ).first()
