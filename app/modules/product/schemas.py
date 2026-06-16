@@ -74,6 +74,11 @@ class ProductPublic(ProductBase):
     categories: list[ProductCategoryPublic] = Field(default_factory=list)
     ingredients: list[ProductIngredientPublic] = Field(default_factory=list)
 
+    # Stock calculado en vivo: para productos con receta es el mínimo de
+    # (ingrediente.stock_quantity / cantidad_necesaria); para standalone
+    # es simplemente stock_quantity.
+    available_stock: int = 0
+
 
 class ProductList(SQLModel):
     total: int

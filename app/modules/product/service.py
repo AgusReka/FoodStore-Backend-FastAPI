@@ -93,6 +93,38 @@ class ProductService:
 
         return db_map
 
+    # ── Helpers de stock ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _compute_available_stock(
+        ingredient_map: dict[int, Ingredient],
+        ingredient_items: list[tuple[int, int]],
+    ) -> int:
+        """
+        Calcula el stock fabricable de un producto con receta.
+
+        available_stock = MIN(ingrediente.stock_quantity / cantidad_necesaria)
+        para cada ingrediente de la receta. Si no hay ingredientes retorna 0.
+
+        Args:
+            ingredient_map: dict[id_ingrediente -> Ingredient]
+            ingredient_items: lista de tuplas (ingredient_id, quantity)
+
+        Returns:
+            int: stock fabricable (0 si no hay ingredientes o si falta stock)
+        """
+        if not ingredient_items:
+            return 0
+
+        try:
+            return min(
+                ingredient_map[ing_id].stock_quantity // qty
+                for ing_id, qty in ingredient_items
+                if ing_id in ingredient_map and qty > 0
+            )
+        except (ValueError, ZeroDivisionError):
+            return 0
+
     # ── Casos de uso ─────────────────────────────────────────────────────────
 
     def create(self, data: ProductCreate) -> ProductPublic:
@@ -138,6 +170,12 @@ class ProductService:
                     )
                 )
 
+            # 📊 stock fabricable (si tiene receta, se calcula desde ingredientes)
+            available_stock = self._compute_available_stock(
+                ingredient_map,
+                [(ing.id, ing.quantity) for ing in data.ingredients],
+            )
+
             # 🎯 armar response
             result = ProductPublic(
                 id=product.id,
@@ -145,6 +183,7 @@ class ProductService:
                 description=product.description,
                 base_price=product.base_price,
                 stock_quantity=product.stock_quantity,
+                available_stock=available_stock,
                 image_urls=product.image_urls,
                 prep_time_min=product.prep_time_min,
                 available=product.available,
@@ -304,6 +343,12 @@ class ProductService:
                     for l in current_ing_links
                 ]
 
+            # 📊 stock fabricable (si tiene receta, se calcula desde ingredientes)
+            available_stock = self._compute_available_stock(
+                ingredient_map,
+                [(ing.id, ing.quantity) for ing in ingredients],
+            )
+
             # 🕒 updated_at
             product.updated_at = datetime.now(timezone.utc)
 
@@ -314,6 +359,7 @@ class ProductService:
                 description=product.description,
                 base_price=product.base_price,
                 stock_quantity=product.stock_quantity,
+                available_stock=available_stock,
                 image_urls=product.image_urls,
                 prep_time_min=product.prep_time_min,
                 available=product.available,
@@ -457,6 +503,12 @@ class ProductService:
                     for link in product_ingredient_links
                 ]
 
+                # 📊 stock fabricable
+                available_stock = self._compute_available_stock(
+                    ingredient_map,
+                    [(link.ingredient_id, link.quantity) for link in product_ingredient_links],
+                )
+
                 data.append(
                     ProductPublic(
                         id=product.id,
@@ -464,6 +516,7 @@ class ProductService:
                         description=product.description,
                         base_price=product.base_price,
                         stock_quantity=product.stock_quantity,
+                        available_stock=available_stock,
                         image_urls=product.image_urls,
                         prep_time_min=product.prep_time_min,
                         available=product.available,
@@ -522,6 +575,12 @@ class ProductService:
                 for link in ingredient_links
             ]
 
+            # 📊 stock fabricable
+            available_stock = self._compute_available_stock(
+                ingredient_map,
+                [(link.ingredient_id, link.quantity) for link in ingredient_links],
+            )
+
             # 🎯 response
             result = ProductPublic(
                 id=product.id,
@@ -529,6 +588,7 @@ class ProductService:
                 description=product.description,
                 base_price=product.base_price,
                 stock_quantity=product.stock_quantity,
+                available_stock=available_stock,
                 image_urls=product.image_urls,
                 prep_time_min=product.prep_time_min,
                 available=product.available,
