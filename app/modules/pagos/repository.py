@@ -60,6 +60,11 @@ class PagoMPRepository(BaseRepository[PagoMP]):
             select(PagoMP).where(PagoMP.idempotency_key == key)
         ).first()
 
+    def get_by_external_reference(self, external_ref: str) -> Optional[PagoMP]:
+        return self.session.exec(
+            select(PagoMP).where(PagoMP.external_reference == external_ref)
+        ).first()
+
     def get_latest_by_pedido(self, pedido_id: int) -> Optional[PagoMP]:
         return self.session.exec(
             select(PagoMP)

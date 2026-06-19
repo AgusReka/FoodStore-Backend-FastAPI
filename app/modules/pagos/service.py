@@ -1,4 +1,4 @@
-from sqlmodel import Session, select
+from sqlmodel import Session
 from typing import Optional
 from fastapi import HTTPException, status
 from app.modules.pagos.models import FormaPago, PagoMP
@@ -224,9 +224,7 @@ class PaymentService:
 
             pago_mp = uow.pagos_mp.get_by_mp_payment_id(payment_id)
             if not pago_mp and external_ref:
-                pago_mp = self._session.exec(
-                    select(PagoMP).where(PagoMP.external_reference == external_ref)
-                ).first()
+                pago_mp = uow.pagos_mp.get_by_external_reference(external_ref)
 
             if not pago_mp:
                 return {"status": "ok"}
