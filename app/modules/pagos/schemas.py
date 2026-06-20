@@ -3,6 +3,12 @@ from sqlmodel import SQLModel, Field
 from datetime import datetime
 from decimal import Decimal
 
+
+class DetalleCheckoutRequest(SQLModel):
+    producto_id: int
+    cantidad: int = Field(ge=1)
+
+
 class FormaPagoBase(SQLModel):
     nombre: str = Field(max_length=100)
     descripcion: Optional[str] = None
@@ -30,23 +36,27 @@ class FormaPagoList(SQLModel):
 
 
 class CrearPreferenciaRequest(SQLModel):
-    pedido_id: int
+    """Request para crear preferencia de MP sin pedido previo."""
+    detalles: List[DetalleCheckoutRequest]
+    direccion_entrega_id: int
+    forma_pago_id: int
+    tipo_envio: str = Field(max_length=20)
 
 class CrearPreferenciaResponse(SQLModel):
     init_point: str
     preference_id: str
 
 class ConfirmarPagoRequest(SQLModel):
-    pedido_id: int
-    payment_id: Optional[int] = None
+    """Solo necesitamos payment_id — el pedido se crea a partir de checkout_data."""
+    payment_id: int
 
-class PagoMPStatusResponse(SQLModel):
+class ConfirmarPagoResponse(SQLModel):
     estado: str
-    pedido_id: int
+    pedido_id: Optional[int] = None
 
 class PagoMPPublic(SQLModel):
     id: int
-    pedido_id: int
+    pedido_id: Optional[int] = None
     mp_payment_id: Optional[int]
     mp_status: str
     mp_status_detail: Optional[str]

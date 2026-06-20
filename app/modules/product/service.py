@@ -99,22 +99,24 @@ class ProductService:
     def _compute_available_stock(
         ingredient_map: dict[int, Ingredient],
         ingredient_items: list[tuple[int, int]],
+        stock_quantity: int = 0,
     ) -> int:
         """
-        Calcula el stock fabricable de un producto con receta.
+        Calcula el stock disponible de un producto.
 
-        available_stock = MIN(ingrediente.stock_quantity / cantidad_necesaria)
-        para cada ingrediente de la receta. Si no hay ingredientes retorna 0.
+        Para productos con receta: MIN(ingrediente.stock_quantity / cantidad_necesaria)
+        Para productos sin receta (standalone): stock_quantity físico.
 
         Args:
             ingredient_map: dict[id_ingrediente -> Ingredient]
             ingredient_items: lista de tuplas (ingredient_id, quantity)
+            stock_quantity: stock físico del producto (usado si no tiene receta)
 
         Returns:
-            int: stock fabricable (0 si no hay ingredientes o si falta stock)
+            int: stock disponible
         """
         if not ingredient_items:
-            return 0
+            return stock_quantity
 
         try:
             return min(
@@ -174,6 +176,7 @@ class ProductService:
             available_stock = self._compute_available_stock(
                 ingredient_map,
                 [(ing.id, ing.quantity) for ing in data.ingredients],
+                stock_quantity=data.stock_quantity,
             )
 
             # 🎯 armar response
@@ -347,6 +350,7 @@ class ProductService:
             available_stock = self._compute_available_stock(
                 ingredient_map,
                 [(ing.id, ing.quantity) for ing in ingredients],
+                stock_quantity=product.stock_quantity,
             )
 
             # 🕒 updated_at
@@ -507,6 +511,7 @@ class ProductService:
                 available_stock = self._compute_available_stock(
                     ingredient_map,
                     [(link.ingredient_id, link.quantity) for link in product_ingredient_links],
+                    stock_quantity=product.stock_quantity,
                 )
 
                 data.append(
@@ -579,6 +584,7 @@ class ProductService:
             available_stock = self._compute_available_stock(
                 ingredient_map,
                 [(link.ingredient_id, link.quantity) for link in ingredient_links],
+                stock_quantity=product.stock_quantity,
             )
 
             # 🎯 response

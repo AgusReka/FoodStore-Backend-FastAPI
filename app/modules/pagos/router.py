@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session
@@ -15,7 +15,7 @@ from app.modules.pagos.schemas import (
     CrearPreferenciaRequest,
     CrearPreferenciaResponse,
     ConfirmarPagoRequest,
-    PagoMPStatusResponse,
+    ConfirmarPagoResponse,
 )
 
 router = APIRouter(
@@ -27,6 +27,7 @@ router = APIRouter(
     }
 )
 
+
 def get_forma_pago_service(session: Session = Depends(get_session)) -> FormaPagoService:
     """Factory de dependencia: inyecta el servicio con su Session."""
     return FormaPagoService(session)
@@ -34,6 +35,7 @@ def get_forma_pago_service(session: Session = Depends(get_session)) -> FormaPago
 def get_payment_service(session: Session = Depends(get_session)) -> PaymentService:
     """Factory de dependencia: inyecta el servicio de MercadoPago con su Session."""
     return PaymentService(session)
+
 
 @router.get(
     "/",
@@ -49,6 +51,7 @@ def list_formas_pago(
 ) -> FormaPagoList:
     return svc.get_all(offset=offset, limit=limit, include_deleted=include_deleted)
 
+
 @router.get(
     "/{forma_pago_id}",
     response_model=FormaPagoPublic,
@@ -61,6 +64,7 @@ def get_forma_pago(
 ) -> FormaPagoPublic:
     """Consulta pública de una forma de pago por ID."""
     return svc.get_forma_pago_by_id(forma_pago_id)
+
 
 @router.post(
     "/",
@@ -83,6 +87,7 @@ def create_forma_pago(
         es_admin=True
     )
     
+
 @router.patch(
     "/{forma_pago_id}",
     response_model=FormaPagoPublic,
@@ -102,6 +107,7 @@ def update_forma_pago(
         es_admin=True
     )
     
+
 @router.delete(
     "/{forma_pago_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -125,7 +131,8 @@ def delete_forma_pago(
     "/create-preference",
     response_model=CrearPreferenciaResponse,
     summary="Crear preferencia de pago en MercadoPago",
-    description="Crea una preferencia de pago para un pedido específico."
+    description="Crea una preferencia de pago con los items del carrito. NO crea el pedido aún — "
+                "se crea cuando MP confirma el pago."
 )
 def create_preference(
     req: CrearPreferenciaRequest,
@@ -133,7 +140,7 @@ def create_preference(
     svc: PaymentService = Depends(get_payment_service)
 ) -> CrearPreferenciaResponse:
     return svc.crear_preferencia(
-        pedido_id=req.pedido_id,
+        req=req,
         usuario_id=current_user.id,
     )
 
@@ -169,46 +176,51 @@ async def mercadopago_webhook(
 
 @router.post(
     "/confirm",
-    response_model=PagoMPStatusResponse,
-    summary="Confirmar pago manualmente",
-    description="Verifica el estado de un pago contra MercadoPago y actualiza el pedido."
+    response_model=ConfirmarPagoResponse,
+    summary="Confirmar pago y crear pedido",
+    description="Verifica el estado de un pago contra MercadoPago. Si está aprobado, "
+                "crea el pedido con los datos guardados en checkout_data. Si no, solo "
+                "actualiza el estado del pago."
 )
 def confirm_payment(
     req: ConfirmarPagoRequest,
     svc: PaymentService = Depends(get_payment_service)
-) -> PagoMPStatusResponse:
+) -> ConfirmarPagoResponse:
     return svc.confirmar_pago(
-        pedido_id=req.pedido_id,
         payment_id=req.payment_id,
     )
 
 
-STATUS_MAP = {
-    "success": "success",
-    "failure": "failure",
-    "approved": "success",
-    "rejected": "failure",
-    "pending": "success",
-}
+# ─── Redirects post-MP ────────────────────────────────────────────────────────
 
 @router.get(
-    "/redirect/{pedido_id}/{status}",
-    summary="Redirección post-pago",
-    description="Redirige al frontend después de un pago en MercadoPago."
+    "/redirect/success",
+    summary="Redirección post-pago exitoso",
+    description="Redirige al frontend después de un pago exitoso en MercadoPago. "
+                "Pasa los query params de MP (payment_id, external_reference, etc.) "
+                "al frontend para que cree el pedido."
 )
-def redirect_after_payment(
-    pedido_id: int,
-    status: str,
-    payment_id: Optional[int] = Query(None),
-    request: Request = None,
-):
-    frontend_status = STATUS_MAP.get(status, "success")
-    url = f"{settings.VITE_FRONTEND_URL}/orders/{pedido_id}/{frontend_status}"
+def redirect_success(request: Request):
+    url = f"{settings.VITE_FRONTEND_URL}/orders/confirm"
+
+    # Filtrar query params (MP manda "null" como string)
     if request and request.query_params:
-        qs = "&".join(
+        params = [
             f"{k}={v}" for k, v in request.query_params.items()
-            if k not in ("pedido_id", "status")
-        )
-        if qs:
-            url += f"?{qs}"
-    return RedirectResponse(url=url)
+            if v not in ("null", "None", "", "undefined")
+        ]
+        if params:
+            url += "?" + "&".join(params)
+
+    return RedirectResponse(url=url, status_code=302)
+
+
+@router.get(
+    "/redirect/cart",
+    summary="Redirección al carrito",
+    description="Redirige al carrito cuando el pago fue cancelado o el usuario volvió. "
+                "Sin autenticación — solo redirige, no muta estado."
+)
+def redirect_cart():
+    url = f"{settings.VITE_FRONTEND_URL}/cart"
+    return RedirectResponse(url=url, status_code=302)
