@@ -4,6 +4,8 @@ from typing import Optional, List
 from app.core.exceptions.custom_exceptions import (
     AppError,
     AuthorizationError,
+    BusinessRuleError,
+    ConflictError,
     DuplicateResourceError,
     ResourceNotFoundError,
 )
@@ -203,24 +205,18 @@ class PaymentService:
         with PaymentUnitOfWork(self._session) as uow:
             # 1. Validar productos y calcular total
             if not req.detalles:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Debe incluir al menos un producto",
-                )
-
+                raise ConflictError(message=("Debe incluir al menos un producto"))
             subtotal = Decimal("0.00")
             mp_items = []
             for detalle_in in req.detalles:
                 producto = uow.products.get_by_id(detalle_in.producto_id)
                 if not producto:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Producto ID {detalle_in.producto_id} no encontrado",
+                    raise ResourceNotFoundError(
+                        message=(f"Producto ID {detalle_in.producto_id} no encontrado")
                     )
                 if not producto.available:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Producto '{producto.name}' no está disponible",
+                    raise ConflictError(
+                        message=(f"Producto '{producto.name}' no está disponible")
                     )
 
                 # Validar stock para productos sin receta
@@ -229,12 +225,11 @@ class PaymentService:
                     not ingredient_links
                     and producto.stock_quantity < detalle_in.cantidad
                 ):
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
+                    raise ConflictError(
+                        message=(
                             f"Stock insuficiente para '{producto.name}'. "
                             f"Disponible: {producto.stock_quantity}"
-                        ),
+                        )
                     )
 
                 precio = producto.base_price
@@ -267,16 +262,14 @@ class PaymentService:
                     ing.id for ing in ingredients
                 }
                 if missing:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Ingredientes no encontrados: {list(missing)}",
+                    raise ResourceNotFoundError(
+                        message=(f"Ingredientes no encontrados: {list(missing)}")
                     )
                 for ing in ingredients:
                     required = ingredient_requirements[ing.id]
                     if ing.stock_quantity < required:
-                        raise HTTPException(
-                            status_code=status.HTTP_409_CONFLICT,
-                            detail=(
+                        raise ConflictError(
+                            message=(
                                 f"Stock insuficiente para ingrediente '{ing.name}'. "
                                 f"Requerido: {required}, disponible: {ing.stock_quantity}"
                             ),
@@ -354,9 +347,8 @@ class PaymentService:
         # 1. Consultar MP
         mp_response = self._sdk.payment().get(payment_id)
         if mp_response["status"] != 200:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Error al consultar el pago en MercadoPago",
+            raise AppError(
+                message="Error al consultar el pago en MercadoPago",
             )
 
         mp_payment = mp_response["response"]
@@ -364,9 +356,8 @@ class PaymentService:
         external_ref = mp_payment.get("external_reference", "")
 
         if not external_ref:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="external_reference no encontrada en el pago",
+            raise BusinessRuleError(
+                message="external_reference no encontrada en el pago",
             )
 
         # 2. Transacción: actualizar PagoMP + crear pedido si aprobado
