@@ -3,6 +3,10 @@ import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.exceptions.exception_handlers import register_exception_handlers
+from app.core.middleware.logging_middleware import LoggingMiddleware
+from app.core.middleware.timing_middleware import TimingMiddleware
+from app.core.rate_limit.rate_limit_middleware import RateLimitMiddleware
 from app.db.seed import run_seed
 from app.core.websocket import manager
 from contextlib import asynccontextmanager
@@ -42,7 +46,14 @@ origins = [
     "http://localhost:5173",  # Cliente
     "http://localhost:5174",  # Admin
     "http://127.0.0.1:5173",
+    "http://181.118.80.143:0",
 ]
+
+app.add_middleware(RateLimitMiddleware)
+
+app.add_middleware(LoggingMiddleware)
+
+app.add_middleware(TimingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,13 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.exception_handler(ValueError)
-def value_error_handler(request: Request, exc: ValueError):
-    return JSONResponse(
-        status_code=400,
-        content={"detail": str(exc)},
-    )
+register_exception_handlers(app)
 
 
 # 👇 acá lo registrás

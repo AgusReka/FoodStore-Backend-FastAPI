@@ -1,10 +1,11 @@
 import asyncio
 import cloudinary
 import cloudinary.uploader
-from fastapi import HTTPException, UploadFile, status
+from fastapi import UploadFile
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.exceptions.custom_exceptions import AppError, ResourceNotFoundError
 from app.modules.images.models import Image
 from app.modules.images.schemas import ImagePublic
 from app.modules.images.unit_of_work import ImageUnitOfWork
@@ -34,22 +35,24 @@ class ImageService:
         with ImageUnitOfWork(self._session) as uow:
             image = uow.images.get_by_id(image_id)
             if not image:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+                raise ResourceNotFoundError(message="Image not found")
             return ImagePublic.model_validate(image)
 
     async def upload_many(self, files: list[UploadFile]) -> list[ImagePublic]:
         results: list[ImagePublic] = []
         for file in files:
             if file.content_type not in ALLOWED_TYPES:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"File '{file.filename}' has unsupported type '{file.content_type}'.",
+                raise AppError(
+                    message=f"File '{file.filename}' has unsupported type '{file.content_type}'.",
+                    status_code=422,
+                    code="unsupported_media_type",
                 )
             content = await file.read()
             if len(content) > MAX_FILE_SIZE:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"File '{file.filename}' exceeds the 10 MB limit.",
+                raise AppError(
+                    message=f"File '{file.filename}' exceeds the 10 MB limit.",
+                    status_code=413,
+                    code="file_too_large",
                 )
             upload_result = await asyncio.to_thread(
                 cloudinary.uploader.upload,
@@ -75,6 +78,6 @@ class ImageService:
         with ImageUnitOfWork(self._session) as uow:
             image = uow.images.get_by_id(image_id)
             if not image:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+                raise ResourceNotFoundError(message="Image not found")
             cloudinary.uploader.destroy(image.public_id, resource_type="image")
             uow.images.delete(image)

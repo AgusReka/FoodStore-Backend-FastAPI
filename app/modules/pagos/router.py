@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, status, Query, Request
 from fastapi.responses import RedirectResponse
-from typing import Annotated, Optional, List
+from typing import Annotated
 from sqlmodel import Session
 from app.core.database import get_session
 from app.core.deps import get_current_active_user, require_admin
@@ -199,7 +199,6 @@ STATUS_MAP = {
 def redirect_after_payment(
     pedido_id: int,
     status: str,
-    payment_id: Optional[int] = Query(None),
     request: Request = None,
 ):
     frontend_status = STATUS_MAP.get(status, "success")

@@ -2,7 +2,7 @@
 Service de user — lógica de negocio.
 
 Stateless, orquesta operaciones sobre los repositorios a través del UoW.
-Lanza HTTPException. No hace commit/rollback directamente.
+Lanza excepciones de dominio (AppError). No hace commit/rollback directamente.
 
 Capa: Service
 Conoce a: UoW, Repository (indirectamente vía UoW)
@@ -13,10 +13,15 @@ Regla de imports:
 """
 
 from app.core import database
-from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.exceptions.custom_exceptions import (
+    AuthenticationError,
+    BusinessRuleError,
+    DuplicateResourceError,
+    ResourceNotFoundError,
+)
 from app.core.security import hash_password, verify_password, create_access_token
 from app.modules.user.unit_of_work import UserUnitOfWork
 from app.modules.user.models import User
@@ -33,11 +38,9 @@ class UserService:
     def register(self, user_in: UserCreate) -> UserPublic:
         with UserUnitOfWork(self._session) as uow:
             if uow.users.get_by_username(user_in.username):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                                    detail="El nombre de user ya está en uso")
+                raise DuplicateResourceError(message="El nombre de user ya está en uso")
             if uow.users.get_by_email(user_in.email):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                                    detail="El email ya está registrado")
+                raise DuplicateResourceError(message="El email ya está registrado")
 
             user = User(
                 username=user_in.username,
@@ -58,12 +61,9 @@ class UserService:
             user = uow.users.get_by_username(username)
 
             if not user or not verify_password(password, user.hashed_password):
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                                    detail="Credenciales incorrectas",
-                                    headers={"WWW-Authenticate": "Bearer"})
+                raise AuthenticationError(message="Credenciales incorrectas")
             if user.disabled:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                    detail="Cuenta desactivada")
+                raise BusinessRuleError(message="Cuenta desactivada")
 
             # Leer roles desde la tabla user_roles
             roles_codigos = [ur.rol_code for ur in uow.users.get_roles(user.id)]
@@ -84,10 +84,7 @@ class UserService:
         with UserUnitOfWork(self._session) as uow:
             user = uow.users.get_by_id(user_id)
             if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="user no encontrado",
-                )
+                raise ResourceNotFoundError(message="user no encontrado")
             user.disabled = disabled
             return uow.users.update(user)
 
@@ -108,8 +105,7 @@ class UserService:
             self._verificar_usuario(usuario_id, uow)
 
             if not uow.users.get_rol(data.rol_code):
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                    detail=f"Rol '{data.rol_code}' no existe")
+                raise ResourceNotFoundError(message=f"Rol '{data.rol_code}' no existe")
 
             ur = uow.users.asignar_rol(
                 id_user=usuario_id,
@@ -124,16 +120,14 @@ class UserService:
             self._verificar_usuario(usuario_id, uow)
             eliminado = uow.users.quitar_rol(usuario_id, rol_code)
             if not eliminado:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                    detail="El usuario no tiene ese rol")
+                raise ResourceNotFoundError(message="El usuario no tiene ese rol")
 
     # ─── Helpers privados ─────────────────────────────────────────────────────
 
     def _verificar_usuario(self, user_id: int, uow: UserUnitOfWork) -> User:
         user = uow.users.get_by_id(user_id)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Usuario no encontrado")
+            raise ResourceNotFoundError(message="Usuario no encontrado")
         return user
 
     def _to_public(self, user: User, uow: UserUnitOfWork) -> UserPublic:

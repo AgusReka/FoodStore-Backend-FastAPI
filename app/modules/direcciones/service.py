@@ -1,6 +1,6 @@
 from sqlmodel import Session
 from typing import List, Optional
-from fastapi import HTTPException, status
+from app.core.exceptions.custom_exceptions import ResourceNotFoundError
 from app.modules.direcciones.models import DireccionEntrega
 from app.modules.direcciones.unit_of_work import AddressUnitOfWork
 from app.modules.direcciones.schemas import DireccionEntregaCreate, DireccionEntregaUpdate
@@ -22,16 +22,10 @@ class DireccionesService:
         with AddressUnitOfWork(self._session) as uow:
             direccion = uow.direcciones.get(direccion_id)
             if not direccion or direccion.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             if direccion.usuario_id != usuario_id:
                 # Devolvemos 404 (no 403) para no revelar la existencia de un ID ajeno.
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             return direccion
 
     def get_direccion_principal(self, usuario_id: int) -> Optional[DireccionEntrega]:
@@ -52,15 +46,9 @@ class DireccionesService:
         with AddressUnitOfWork(self._session) as uow:
             direccion = uow.direcciones.get(direccion_id)
             if not direccion or direccion.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             if direccion.usuario_id != usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             if direccion_in.es_principal is True:
                 uow.direcciones.marcar_no_principal(usuario_id)
             update_data = direccion_in.model_dump(exclude_unset=True)
@@ -73,15 +61,9 @@ class DireccionesService:
         with AddressUnitOfWork(self._session) as uow:
             direccion = uow.direcciones.get(direccion_id)
             if not direccion or direccion.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             if direccion.usuario_id != usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             uow.direcciones.marcar_no_principal(usuario_id)
             direccion.es_principal = True
             return uow.direcciones.update(direccion_id, direccion)
@@ -90,13 +72,7 @@ class DireccionesService:
         with AddressUnitOfWork(self._session) as uow:
             direccion = uow.direcciones.get(direccion_id)
             if not direccion or direccion.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             if direccion.usuario_id != usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Dirección no encontrada.",
-                )
+                raise ResourceNotFoundError(message="Dirección no encontrada.")
             uow.direcciones.delete(direccion_id)

@@ -1,6 +1,10 @@
 # app/modules/category/service.py
-from fastapi import HTTPException, status
 from sqlmodel import Session
+
+from app.core.exceptions.custom_exceptions import (
+    DuplicateResourceError,
+    ResourceNotFoundError,
+)
 
 from app.modules.category.models import Category
 from app.modules.category.schemas import (
@@ -22,12 +26,12 @@ class CategoryService:
     def _get_or_404(self, uow: CategoryUnitOfWork, category_id: int) -> Category:
         category = uow.category.get_by_id(category_id)
         if not category:
-            raise ValueError(f"Category con id={category_id} no encontrado")
+            raise ResourceNotFoundError(resource="categoría", identifier=category_id)
         return category
 
     def _assert_name_unique(self, uow: CategoryUnitOfWork, name: str) -> None:
         if uow.category.get_by_name(name):
-            raise ValueError(f"El name '{name}' ya está en uso")
+            raise DuplicateResourceError(resource="categoría", field="name", value=name)
 
     # ── Casos de uso ─────────────────────────────────────────────────────────
 

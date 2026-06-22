@@ -1,4 +1,6 @@
 # app/core/config.py
+from typing import Literal
+
 from pydantic import computed_field
 from pydantic_settings import BaseSettings
 
@@ -47,6 +49,19 @@ class Settings(BaseSettings):
     MP_WEBHOOK_URL: str = ""
     NGROK_URL: str = ""
     VITE_FRONTEND_URL: str = "http://localhost:5173"
+
+    # ─── Rate limiting ───────────────────────────────────────────────────────
+    # default: límite general para todos los endpoints.
+    # auth:    límite estricto para login/register/logout (mitiga fuerza bruta).
+    # *_per_minute = tokens que se reponen por minuto; *_burst = tope del balde.
+    rate_limit_default_per_minute: int = 60
+    rate_limit_default_burst: int = 60
+    rate_limit_auth_per_minute: int = 5
+    rate_limit_auth_burst: int = 5
+
+    # ─── Logging ─────────────────────────────────────────────────────────────
+    # Nivel de log. Literal evita typos (typo en el .env → falla validación).
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     model_config = {
         "env_file": ".env",

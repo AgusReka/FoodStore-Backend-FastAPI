@@ -1,8 +1,12 @@
 # app/modules/product/service.py
-from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlmodel import Session
 
+from app.core.exceptions.custom_exceptions import (
+    BusinessRuleError,
+    DuplicateResourceError,
+    ResourceNotFoundError,
+)
 from app.modules.category.models import Category
 from app.modules.ingredient.models import Ingredient
 from app.modules.product.models import Product
@@ -11,6 +15,8 @@ from app.modules.product.schemas import (
     ProductPublic,
     ProductUpdate,
     ProductList,
+    IngredientShortage,
+    ProductStockShortagePublic,
 )
 from app.modules.product.unit_of_work import ProductUnitOfWork
 from datetime import datetime, timezone
@@ -33,12 +39,12 @@ class ProductService:
     def _get_or_404(self, uow: ProductUnitOfWork, product_id: int) -> Product:
         product = uow.products.get_by_id(product_id)
         if not product:
-            raise ValueError(f"Product con id={product_id} no encontrado")
+            raise ResourceNotFoundError(resource="producto", identifier=product_id)
         return product
 
     def _assert_name_unique(self, uow: ProductUnitOfWork, name: str) -> None:
         if uow.products.get_by_name(name):
-            raise ValueError(f"El name '{name}' ya está en uso")
+            raise DuplicateResourceError(resource="producto", field="name", value=name)
 
     def _validate_and_get_categories(
         self,
@@ -46,19 +52,19 @@ class ProductService:
         categories: list[ProductCategoryInput],
     ):
         if not categories:
-            raise ValueError("El producto debe tener al menos una categoría")
+            raise BusinessRuleError("El producto debe tener al menos una categoría")
 
         # duplicados
         ids = [c.id for c in categories]
         if len(set(ids)) != len(ids):
-            raise ValueError("No se permiten categorías duplicadas")
+            raise BusinessRuleError("No se permiten categorías duplicadas")
 
         # primaria
         primary_count = sum(1 for c in categories if c.is_primary)
         if primary_count == 0:
-            raise ValueError("Debe haber una categoría primaria")
+            raise BusinessRuleError("Debe haber una categoría primaria")
         if primary_count > 1:
-            raise ValueError("Solo puede haber una categoría primaria")
+            raise BusinessRuleError("Solo puede haber una categoría primaria")
 
         # traer de DB
         db_categories = uow.categories.get_all_in(ids)
@@ -66,7 +72,9 @@ class ProductService:
 
         missing = set(ids) - db_map.keys()
         if missing:
-            raise ValueError(f"Categorías no encontradas: {list(missing)}")
+            raise ResourceNotFoundError(
+                message=f"Categorías no encontradas: {list(missing)}"
+            )
 
         return db_map
 
@@ -81,7 +89,7 @@ class ProductService:
         # duplicados
         ids = [ing.id for ing in ingredients]
         if len(set(ids)) != len(ids):
-            raise ValueError("No se permiten ingredientes duplicados")
+            raise BusinessRuleError("No se permiten ingredientes duplicados")
 
         # traer de DB
         db_ingredients = uow.ingredients.get_all_in(ids)
@@ -89,7 +97,9 @@ class ProductService:
 
         missing = set(ids) - db_map.keys()
         if missing:
-            raise ValueError(f"Ingredientes no encontrados: {list(missing)}")
+            raise ResourceNotFoundError(
+                message=f"Ingredientes no encontrados: {list(missing)}"
+            )
 
         return db_map
 
@@ -205,6 +215,7 @@ class ProductService:
                         is_removable=ing.is_removable,
                         quantity=ing.quantity,
                         is_allergen=ingredient_map[ing.id].is_allergen,
+                        has_stock=ingredient_map[ing.id].stock_quantity >= ing.quantity,
                     )
                     for ing in data.ingredients
                 ],
@@ -218,7 +229,7 @@ class ProductService:
             # 🔎 buscar producto
             product = uow.products.get_by_id(product_id)
             if not product:
-                raise ValueError("Producto no encontrado")
+                raise ResourceNotFoundError(resource="producto", identifier=product_id)
 
             # 🧠 convertir solo lo que vino
             update_data = data.model_dump(exclude_unset=True)
@@ -381,6 +392,7 @@ class ProductService:
                         is_allergen=ingredient_map[ing.id].is_allergen,
                         is_removable=ing.is_removable,
                         quantity=ing.quantity,
+                        has_stock=ingredient_map[ing.id].stock_quantity >= ing.quantity,
                     )
                     for ing in ingredients
                 ],
@@ -416,14 +428,16 @@ class ProductService:
 
             # Validación cruzada de precio
             if price_min is not None and price_max is not None and price_min > price_max:
-                raise ValueError("price_min no puede ser mayor que price_max")
+                raise BusinessRuleError("price_min no puede ser mayor que price_max")
 
             # Validar que los ingredientes existan (si vinieron)
             if ingredient_ids:
                 found = uow.ingredients.get_all_in(ingredient_ids)
                 missing = set(ingredient_ids) - {ing.id for ing in found}
                 if missing:
-                    raise ValueError(f"Ingredientes no encontrados: {sorted(missing)}")
+                    raise ResourceNotFoundError(
+                        message=f"Ingredientes no encontrados: {sorted(missing)}"
+                    )
 
             products = uow.products.get_all(
                 offset,
@@ -499,6 +513,7 @@ class ProductService:
                         is_allergen=ingredient_map[link.ingredient_id].is_allergen,
                         is_removable=link.is_removable,
                         quantity=link.quantity,
+                        has_stock=ingredient_map[link.ingredient_id].stock_quantity >= link.quantity,
                     )
                     for link in product_ingredient_links
                 ]
@@ -571,6 +586,7 @@ class ProductService:
                     is_allergen=ingredient_map[link.ingredient_id].is_allergen,
                     is_removable=link.is_removable,
                     quantity=link.quantity,
+                    has_stock=ingredient_map[link.ingredient_id].stock_quantity >= link.quantity,
                 )
                 for link in ingredient_links
             ]
@@ -606,7 +622,7 @@ class ProductService:
         with ProductUnitOfWork(self._session) as uow:
             product = self._get_or_404(uow, product_id)
             if product.deleted_at is not None:
-                raise ValueError("El producto ya está eliminado")
+                raise BusinessRuleError("El producto ya está eliminado")
             product.deleted_at = datetime.now(timezone.utc)
 
     def set_availability(self, product_id: int, available: bool) -> None:
@@ -614,7 +630,7 @@ class ProductService:
         with ProductUnitOfWork(self._session) as uow:
             product = self._get_or_404(uow, product_id)
             if product.deleted_at is not None:
-                raise ValueError(
+                raise BusinessRuleError(
                     "No se puede cambiar la disponibilidad de un producto eliminado"
                 )
             product.available = available

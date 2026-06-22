@@ -27,6 +27,13 @@ class IngredientRepository(BaseRepository[Ingredient]):
             self.session.exec(select(Ingredient).where(Ingredient.id.in_(ids))).all()
         )
 
+    def get_all_in_for_update(self, ids: list[int]) -> list[Ingredient]:
+        return list(
+            self.session.exec(
+                select(Ingredient).where(Ingredient.id.in_(ids)).with_for_update()
+            ).all()
+        )
+
     def count(self, name: str | None = None) -> int:
         stmt = self._apply_filters(select(Ingredient), name)
         return len(self.session.exec(stmt).all())

@@ -1,6 +1,11 @@
 from sqlmodel import Session
 from typing import Optional
-from fastapi import HTTPException, status
+from app.core.exceptions.custom_exceptions import (
+    AppError,
+    AuthorizationError,
+    DuplicateResourceError,
+    ResourceNotFoundError,
+)
 from app.modules.pagos.models import FormaPago, PagoMP
 from app.modules.pagos.unit_of_work import PaymentUnitOfWork
 from app.modules.pagos.schemas import (
@@ -31,40 +36,31 @@ class FormaPagoService:
         with PaymentUnitOfWork(self._session) as uow:
             forma_pago = uow.formas_pago.get(forma_pago_id)
             if not forma_pago or forma_pago.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Forma de pago ID {forma_pago_id} no encontrada",
+                raise ResourceNotFoundError(
+                    message=f"Forma de pago ID {forma_pago_id} no encontrada"
                 )
             return forma_pago
 
     def create_forma_pago(self, forma_pago_in: FormaPagoCreate, es_admin: bool = True) -> FormaPago:
         if not es_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permisos para crear formas de pago.",
-            )
+            raise AuthorizationError(message="No tienes permisos para crear formas de pago.")
         with PaymentUnitOfWork(self._session) as uow:
             existing = uow.formas_pago.get_by_nombre(forma_pago_in.nombre)
             if existing:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Ya existe una forma de pago con el nombre '{forma_pago_in.nombre}'.",
+                raise DuplicateResourceError(
+                    message=f"Ya existe una forma de pago con el nombre '{forma_pago_in.nombre}'."
                 )
             forma_pago = FormaPago(**forma_pago_in.model_dump())
             return uow.formas_pago.create(forma_pago)
 
     def update_forma_pago(self, forma_pago_id: int, forma_pago_in: FormaPagoUpdate, es_admin: bool = True) -> FormaPago:
         if not es_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo administradores pueden modificar formas de pago",
-            )
+            raise AuthorizationError(message="Solo administradores pueden modificar formas de pago")
         with PaymentUnitOfWork(self._session) as uow:
             forma_pago = uow.formas_pago.get(forma_pago_id)
             if not forma_pago or forma_pago.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Forma de pago ID {forma_pago_id} no encontrada",
+                raise ResourceNotFoundError(
+                    message=f"Forma de pago ID {forma_pago_id} no encontrada"
                 )
             update_data = forma_pago_in.model_dump(exclude_unset=True)
             for field, value in update_data.items():
@@ -74,16 +70,12 @@ class FormaPagoService:
 
     def delete_forma_pago(self, forma_pago_id: int, es_admin: bool = True) -> None:
         if not es_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo administradores pueden eliminar formas de pago",
-            )
+            raise AuthorizationError(message="Solo administradores pueden eliminar formas de pago")
         with PaymentUnitOfWork(self._session) as uow:
             forma_pago = uow.formas_pago.get(forma_pago_id)
             if not forma_pago or forma_pago.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Forma de pago ID {forma_pago_id} no encontrada",
+                raise ResourceNotFoundError(
+                    message=f"Forma de pago ID {forma_pago_id} no encontrada"
                 )
             uow.formas_pago.delete(forma_pago_id)
 
@@ -95,9 +87,10 @@ class PaymentService:
 
     def _check_sdk(self):
         if not self._sdk:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="MercadoPago no configurado",
+            raise AppError(
+                message="MercadoPago no configurado",
+                status_code=500,
+                code="mp_not_configured",
             )
 
     def _mapear_estado_mp(self, mp_status: str) -> str:
@@ -120,15 +113,9 @@ class PaymentService:
         with PaymentUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Pedido no encontrado",
-                )
+                raise ResourceNotFoundError(message="Pedido no encontrado")
             if pedido.usuario_id != usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes acceso a este pedido",
-                )
+                raise AuthorizationError(message="No tienes acceso a este pedido")
 
             pago_mp = PagoMP(
                 pedido_id=pedido_id,
@@ -163,9 +150,10 @@ class PaymentService:
 
             result = self._sdk.preference().create(preference_data)
             if result["status"] not in (200, 201):
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Error al crear preferencia en MercadoPago",
+                raise AppError(
+                    message="Error al crear preferencia en MercadoPago",
+                    status_code=502,
+                    code="mp_bad_gateway",
                 )
 
             response = result["response"]
@@ -187,10 +175,7 @@ class PaymentService:
                 pago_mp = uow.pagos_mp.get_latest_by_pedido(pedido_id)
 
             if not pago_mp:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No se encontró pago asociado",
-                )
+                raise ResourceNotFoundError(message="No se encontró pago asociado")
 
             mp_id = payment_id or pago_mp.mp_payment_id
             if mp_id:

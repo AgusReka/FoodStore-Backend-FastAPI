@@ -27,6 +27,7 @@ class ProductIngredientPublic(SQLModel):
     is_removable: bool
     quantity: int
     is_allergen: bool
+    has_stock: bool
 
 
 class ProductBase(SQLModel):
@@ -87,3 +88,17 @@ class ProductList(SQLModel):
 
 class ProductAvailabilityUpdate(SQLModel):
     available: bool
+
+
+class IngredientShortage(SQLModel):
+    ingredient_id: int
+    ingredient_name: str
+    required: int
+    available: int
+    missing: int
+
+
+class ProductStockShortagePublic(SQLModel):
+    product_id: int
+    available_stock: int
+    shortages: list[IngredientShortage]

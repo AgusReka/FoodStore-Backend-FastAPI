@@ -2,7 +2,12 @@ from sqlmodel import Session
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from fastapi import HTTPException, status
+from app.core.exceptions.custom_exceptions import (
+    AuthorizationError,
+    BusinessRuleError,
+    ConflictError,
+    ResourceNotFoundError,
+)
 from app.modules.pedidos.unit_of_work import OrderUnitOfWork
 from app.modules.pedidos.models import (
     Pedido,
@@ -123,10 +128,7 @@ class PedidoService:
     def crear_pedido(self, usuario_id: int, pedido_in: PedidoCreate) -> Pedido:
         with OrderUnitOfWork(self._session) as uow:
             if not pedido_in.detalles:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="El pedido debe contener al menos un producto",
-                )
+                raise BusinessRuleError(message="El pedido debe contener al menos un producto")
 
             product_repo = ProductRepository(self._session)
             ingredient_repo = IngredientRepository(self._session)
@@ -138,17 +140,15 @@ class PedidoService:
             standalone_products: list[tuple[Product, int]] = []
 
             for detalle_in in pedido_in.detalles:
-                producto = product_repo.get_by_id(detalle_in.producto_id)
+                producto = product_repo.get_by_id_for_update(detalle_in.producto_id)
 
                 if not producto:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Producto ID {detalle_in.producto_id} no encontrado",
+                    raise ResourceNotFoundError(
+                        message=f"Producto ID {detalle_in.producto_id} no encontrado"
                     )
                 if not producto.available:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Producto '{producto.name}' no está disponible",
+                    raise ConflictError(
+                        message=f"Producto '{producto.name}' no está disponible"
                     )
 
                 ingredient_links = product_repo.get_ingredient_links(producto.id)
@@ -163,12 +163,11 @@ class PedidoService:
                 else:
                     # Producto independiente: se descuenta directamente del stock del producto
                     if producto.stock_quantity < detalle_in.cantidad:
-                        raise HTTPException(
-                            status_code=status.HTTP_409_CONFLICT,
-                            detail=(
+                        raise ConflictError(
+                            message=(
                                 f"Stock insuficiente para '{producto.name}'. "
                                 f"Disponible: {producto.stock_quantity}"
-                            ),
+                            )
                         )
                     standalone_products.append((producto, detalle_in.cantidad))
 
@@ -188,25 +187,23 @@ class PedidoService:
 
             if ingredient_requirements:
                 required_ingredient_ids = list(ingredient_requirements.keys())
-                ingredients = ingredient_repo.get_all_in(required_ingredient_ids)
+                ingredients = ingredient_repo.get_all_in_for_update(required_ingredient_ids)
                 missing_ingredients = set(required_ingredient_ids) - {
                     ing.id for ing in ingredients
                 }
                 if missing_ingredients:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Ingredientes no encontrados: {list(missing_ingredients)}",
+                    raise ResourceNotFoundError(
+                        message=f"Ingredientes no encontrados: {list(missing_ingredients)}"
                     )
 
                 for ingredient in ingredients:
                     required = ingredient_requirements[ingredient.id]
                     if ingredient.stock_quantity < required:
-                        raise HTTPException(
-                            status_code=status.HTTP_409_CONFLICT,
-                            detail=(
+                        raise ConflictError(
+                            message=(
                                 f"Stock insuficiente para ingrediente '{ingredient.name}'. "
                                 f"Requerido: {required}, disponible: {ingredient.stock_quantity}"
-                            ),
+                            )
                         )
 
                 for ingredient in ingredients:
@@ -260,16 +257,10 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido or pedido.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Pedido no encontrado",
-                )
+                raise ResourceNotFoundError(message="Pedido no encontrado")
             if usuario_id is not None and not es_admin:
                 if pedido.usuario_id != usuario_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="No tienes permiso para ver este pedido",
-                    )
+                    raise AuthorizationError(message="No tienes permiso para ver este pedido")
             return pedido
 
     def get_pedidos_by_usuario(
@@ -342,18 +333,14 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido or pedido.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Pedido no encontrado",
-                )
+                raise ResourceNotFoundError(message="Pedido no encontrado")
 
             estado_actual = uow.estados.get(pedido.estado_id)
             nuevo_estado = uow.estados.get_by_codigo(cambio.nuevo_estado)
 
             if not nuevo_estado:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Estado '{cambio.nuevo_estado.value}' no existe",
+                raise BusinessRuleError(
+                    message=f"Estado '{cambio.nuevo_estado.value}' no existe"
                 )
 
             if estado_actual == nuevo_estado:
@@ -372,23 +359,21 @@ class PedidoService:
                         estado_actual.id, roles
                     )
                 ]
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
+                raise ConflictError(
+                    message=(
                         f"Transición inválida: de '{estado_actual.codigo.value}' "
                         f"no se puede ir a '{nuevo_estado.codigo.value}'. "
                         f"Estados permitidos para tu rol: {destinos}"
-                    ),
+                    )
                 )
 
             # La transición existe pero ninguno de los roles del usuario la permite
             if not any(r in permitidos for r in roles):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
+                raise AuthorizationError(
+                    message=(
                         f"Transición no permitida para tu rol: "
                         f"'{estado_actual.codigo.value}' → '{nuevo_estado.codigo.value}'"
-                    ),
+                    )
                 )
 
             pedido.estado_id = nuevo_estado.id
@@ -421,22 +406,15 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido or pedido.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Pedido no encontrado",
-                )
+                raise ResourceNotFoundError(message="Pedido no encontrado")
             if pedido.usuario_id != usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permiso para cancelar este pedido",
-                )
+                raise AuthorizationError(message="No tienes permiso para cancelar este pedido")
 
             estado_actual = uow.estados.get(pedido.estado_id)
             cancelables = [EstadoPedidoEnum.PENDIENTE, EstadoPedidoEnum.CONFIRMADO]
             if estado_actual.codigo not in cancelables:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"El pedido no puede cancelarse desde el estado '{estado_actual.codigo.value}'",
+                raise ConflictError(
+                    message=f"El pedido no puede cancelarse desde el estado '{estado_actual.codigo.value}'"
                 )
 
             nuevo_estado = uow.estados.get_by_codigo(EstadoPedidoEnum.CANCELADO)
@@ -469,21 +447,14 @@ class PedidoService:
         with OrderUnitOfWork(self._session) as uow:
             pedido = uow.pedidos.get(pedido_id)
             if not pedido or pedido.deleted_at is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Pedido no encontrado",
-                )
+                raise ResourceNotFoundError(message="Pedido no encontrado")
             if pedido.usuario_id != usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permiso para modificar este pedido",
-                )
+                raise AuthorizationError(message="No tienes permiso para modificar este pedido")
 
             estado_actual = uow.estados.get(pedido.estado_id)
             if estado_actual.orden >= 3:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="No se puede modificar un pedido que ya está en preparación",
+                raise ConflictError(
+                    message="No se puede modificar un pedido que ya está en preparación"
                 )
 
             update_data = pedido_in.model_dump(exclude_unset=True)

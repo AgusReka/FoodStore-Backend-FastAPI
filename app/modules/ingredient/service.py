@@ -1,6 +1,10 @@
 # app/modules/ingredient/service.py
-from fastapi import HTTPException, status
 from sqlmodel import Session
+
+from app.core.exceptions.custom_exceptions import (
+    DuplicateResourceError,
+    ResourceNotFoundError,
+)
 
 from app.modules.ingredient.models import Ingredient
 from app.modules.ingredient.schemas import (
@@ -22,12 +26,12 @@ class IngredientService:
     def _get_or_404(self, uow: IngredientUnitOfWork, ingredient_id: int) -> Ingredient:
         ingredient = uow.ingredient.get_by_id(ingredient_id)
         if not ingredient:
-            raise ValueError(f"Ingredient con id={ingredient_id} no encontrado")
+            raise ResourceNotFoundError(resource="ingrediente", identifier=ingredient_id)
         return ingredient
 
     def _assert_name_unique(self, uow: IngredientUnitOfWork, name: str) -> None:
         if uow.ingredient.get_by_name(name):
-            raise ValueError(f"El name '{name}' ya está en uso")
+            raise DuplicateResourceError(resource="ingrediente", field="name", value=name)
 
     # ── Casos de uso ─────────────────────────────────────────────────────────
 

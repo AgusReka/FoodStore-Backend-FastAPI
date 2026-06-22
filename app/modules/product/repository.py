@@ -11,6 +11,13 @@ class ProductRepository(BaseRepository[Product]):
     def __init__(self, session: Session) -> None:
         super().__init__(session, Product)
 
+    def get_by_id_for_update(self, product_id: int) -> Product | None:
+        return self.session.exec(
+            select(Product)
+            .where(Product.id == product_id, Product.deleted_at.is_(None))
+            .with_for_update()
+        ).first()
+
     def get_by_name(self, name: str) -> Product | None:
         # Soft-deleted products free their name for reuse.
         return self.session.exec(

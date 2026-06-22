@@ -3,7 +3,6 @@ import json
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
     status,
     Query,
     WebSocket,
@@ -12,6 +11,7 @@ from fastapi import (
 from typing import Annotated, Optional, List
 from sqlmodel import Session
 from app.core.database import get_session, engine
+from app.core.exceptions.custom_exceptions import AppError
 from app.core.deps import (
     get_current_active_user,
     require_admin_or_pedidos,
@@ -187,7 +187,7 @@ def get_pedido(
     """
     # Determinar si es admin o PEDIDOS basado en los roles del token
     user_roles: list[str] = getattr(current_user, "_roles_from_token", [])
-    es_admin = RoleCode.ADMIN in user_roles or RoleCode.PEDIDOS in user_roles
+    es_admin = any(r in user_roles for r in (RoleCode.ADMIN, RoleCode.PEDIDOS, RoleCode.COCINA))
     return svc.get_pedido_by_id(
         pedido_id=pedido_id, usuario_id=current_user.id, es_admin=es_admin
     )
@@ -207,7 +207,7 @@ def get_pedido_historial(
     """Solo el dueño del pedido o roles ADMIN/PEDIDOS pueden consultarlo."""
     # Determinar si es admin o PEDIDOS basado en los roles del token
     user_roles: list[str] = getattr(current_user, "_roles_from_token", [])
-    es_admin = RoleCode.ADMIN in user_roles or RoleCode.PEDIDOS in user_roles
+    es_admin = any(r in user_roles for r in (RoleCode.ADMIN, RoleCode.PEDIDOS, RoleCode.COCINA))
     # Validar acceso al pedido primero
     svc.get_pedido_by_id(pedido_id, usuario_id=current_user.id, es_admin=es_admin)
     # Retornar historial
@@ -371,11 +371,11 @@ async def pedidos_websocket(websocket: WebSocket) -> None:
                                 usuario_id=user_id,
                                 es_admin=False,
                             )
-                        except HTTPException as exc:
+                        except AppError as exc:
                             await websocket.send_json(
                                 {
                                     "event": "ERROR",
-                                    "data": {"detail": exc.detail},
+                                    "data": {"detail": exc.message},
                                 }
                             )
                             continue
