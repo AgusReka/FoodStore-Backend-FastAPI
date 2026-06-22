@@ -3,7 +3,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from decimal import Decimal
-from sqlalchemy import Column, BigInteger, Numeric
+from sqlalchemy import Column, BigInteger, Numeric, Text
 
 if TYPE_CHECKING:
     from app.modules.pedidos.models import Pedido
@@ -28,7 +28,9 @@ class PagoMP(SQLModel, table=True):
     __tablename__ = "pagos_mp"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    pedido_id: int = Field(foreign_key="pedido.id", nullable=False)
+    pedido_id: Optional[int] = Field(
+        default=None, foreign_key="pedido.id", nullable=True
+    )
     mp_payment_id: Optional[int] = Field(
         default=None,
         sa_column=Column(BigInteger, unique=True, nullable=True)
@@ -40,6 +42,9 @@ class PagoMP(SQLModel, table=True):
     )
     external_reference: str = Field(max_length=100, unique=True, nullable=False)
     idempotency_key: str = Field(max_length=100, unique=True, nullable=False)
+    checkout_data: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

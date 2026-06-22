@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, status, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Annotated
 from sqlmodel import Session
 from app.core.database import get_session
@@ -15,7 +15,7 @@ from app.modules.pagos.schemas import (
     CrearPreferenciaRequest,
     CrearPreferenciaResponse,
     ConfirmarPagoRequest,
-    PagoMPStatusResponse,
+    ConfirmarPagoResponse,
 )
 
 router = APIRouter(
@@ -23,101 +23,101 @@ router = APIRouter(
     responses={
         401: {"description": "No autenticado"},
         403: {"description": "Acceso denegado"},
-        404: {"description": "Recurso no encontrado"}
-    }
+        404: {"description": "Recurso no encontrado"},
+    },
 )
+
 
 def get_forma_pago_service(session: Session = Depends(get_session)) -> FormaPagoService:
     """Factory de dependencia: inyecta el servicio con su Session."""
     return FormaPagoService(session)
 
+
 def get_payment_service(session: Session = Depends(get_session)) -> PaymentService:
     """Factory de dependencia: inyecta el servicio de MercadoPago con su Session."""
     return PaymentService(session)
+
 
 @router.get(
     "/",
     response_model=FormaPagoList,
     summary="Listar formas de pago disponibles",
-    description="Obtiene todas las formas de pago registradas con paginación."
+    description="Obtiene todas las formas de pago registradas con paginación.",
 )
 def list_formas_pago(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    include_deleted: bool = Query(default=False, description="Incluir registros eliminados (solo admin)"),
+    include_deleted: bool = Query(
+        default=False, description="Incluir registros eliminados (solo admin)"
+    ),
     svc: FormaPagoService = Depends(get_forma_pago_service),
 ) -> FormaPagoList:
     return svc.get_all(offset=offset, limit=limit, include_deleted=include_deleted)
+
 
 @router.get(
     "/{forma_pago_id}",
     response_model=FormaPagoPublic,
     summary="Obtener forma de pago por ID",
-    description="Obtiene los detalles de una forma de pago específica."
+    description="Obtiene los detalles de una forma de pago específica.",
 )
 def get_forma_pago(
-    forma_pago_id: int,
-    svc: FormaPagoService = Depends(get_forma_pago_service)
+    forma_pago_id: int, svc: FormaPagoService = Depends(get_forma_pago_service)
 ) -> FormaPagoPublic:
     """Consulta pública de una forma de pago por ID."""
     return svc.get_forma_pago_by_id(forma_pago_id)
+
 
 @router.post(
     "/",
     response_model=FormaPagoPublic,
     status_code=status.HTTP_201_CREATED,
     summary="[ADMIN] Crear forma de pago",
-    description="Agrega una nueva forma de pago al sistema."
+    description="Agrega una nueva forma de pago al sistema.",
 )
 def create_forma_pago(
     forma_pago_in: FormaPagoCreate,
     _: Annotated[User, Depends(require_admin)],
-    svc: FormaPagoService = Depends(get_forma_pago_service)
+    svc: FormaPagoService = Depends(get_forma_pago_service),
 ) -> FormaPagoPublic:
     """
     Solo administradores pueden crear formas de pago.
     Valida unicidad del nombre.
     """
-    return svc.create_forma_pago(
-        forma_pago_in=forma_pago_in,
-        es_admin=True
-    )
-    
+    return svc.create_forma_pago(forma_pago_in=forma_pago_in, es_admin=True)
+
+
 @router.patch(
     "/{forma_pago_id}",
     response_model=FormaPagoPublic,
     summary="[ADMIN] Actualizar forma de pago",
-    description="Modifica la configuración de una forma de pago existente."
+    description="Modifica la configuración de una forma de pago existente.",
 )
 def update_forma_pago(
     forma_pago_id: int,
     forma_pago_in: FormaPagoUpdate,
     _: Annotated[User, Depends(require_admin)],
-    svc: FormaPagoService = Depends(get_forma_pago_service)
+    svc: FormaPagoService = Depends(get_forma_pago_service),
 ) -> FormaPagoPublic:
     """Solo administradores pueden modificar formas de pago."""
     return svc.update_forma_pago(
-        forma_pago_id=forma_pago_id,
-        forma_pago_in=forma_pago_in,
-        es_admin=True
+        forma_pago_id=forma_pago_id, forma_pago_in=forma_pago_in, es_admin=True
     )
-    
+
+
 @router.delete(
     "/{forma_pago_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="[ADMIN] Eliminar forma de pago (soft delete)",
-    description="Desactiva lógicamente una forma de pago."
+    description="Desactiva lógicamente una forma de pago.",
 )
 def delete_forma_pago(
     forma_pago_id: int,
     _: Annotated[User, Depends(require_admin)],
-    svc: FormaPagoService = Depends(get_forma_pago_service)
+    svc: FormaPagoService = Depends(get_forma_pago_service),
 ) -> None:
     """Solo administradores pueden eliminar formas de pago."""
-    svc.delete_forma_pago(
-        forma_pago_id=forma_pago_id,
-        es_admin=True
-    )
+    svc.delete_forma_pago(forma_pago_id=forma_pago_id, es_admin=True)
     return None
 
 
@@ -125,15 +125,16 @@ def delete_forma_pago(
     "/create-preference",
     response_model=CrearPreferenciaResponse,
     summary="Crear preferencia de pago en MercadoPago",
-    description="Crea una preferencia de pago para un pedido específico."
+    description="Crea una preferencia de pago con los items del carrito. NO crea el pedido aún — "
+    "se crea cuando MP confirma el pago.",
 )
 def create_preference(
     req: CrearPreferenciaRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
-    svc: PaymentService = Depends(get_payment_service)
+    svc: PaymentService = Depends(get_payment_service),
 ) -> CrearPreferenciaResponse:
     return svc.crear_preferencia(
-        pedido_id=req.pedido_id,
+        req=req,
         usuario_id=current_user.id,
     )
 
@@ -141,11 +142,10 @@ def create_preference(
 @router.post(
     "/webhook",
     summary="Webhook de MercadoPago",
-    description="Endpoint para notificaciones de pago de MercadoPago. Sin autenticación."
+    description="Endpoint para notificaciones de pago de MercadoPago. Sin autenticación.",
 )
 async def mercadopago_webhook(
-    request: Request,
-    svc: PaymentService = Depends(get_payment_service)
+    request: Request, svc: PaymentService = Depends(get_payment_service)
 ) -> dict:
     try:
         body = await request.json()
@@ -169,45 +169,52 @@ async def mercadopago_webhook(
 
 @router.post(
     "/confirm",
-    response_model=PagoMPStatusResponse,
-    summary="Confirmar pago manualmente",
-    description="Verifica el estado de un pago contra MercadoPago y actualiza el pedido."
+    response_model=ConfirmarPagoResponse,
+    summary="Confirmar pago y crear pedido",
+    description="Verifica el estado de un pago contra MercadoPago. Si está aprobado, "
+    "crea el pedido con los datos guardados en checkout_data. Si no, solo "
+    "actualiza el estado del pago.",
 )
 def confirm_payment(
-    req: ConfirmarPagoRequest,
-    svc: PaymentService = Depends(get_payment_service)
-) -> PagoMPStatusResponse:
+    req: ConfirmarPagoRequest, svc: PaymentService = Depends(get_payment_service)
+) -> ConfirmarPagoResponse:
     return svc.confirmar_pago(
-        pedido_id=req.pedido_id,
         payment_id=req.payment_id,
     )
 
 
-STATUS_MAP = {
-    "success": "success",
-    "failure": "failure",
-    "approved": "success",
-    "rejected": "failure",
-    "pending": "success",
-}
+# ─── Redirects post-MP ────────────────────────────────────────────────────────
+
 
 @router.get(
-    "/redirect/{pedido_id}/{status}",
-    summary="Redirección post-pago",
-    description="Redirige al frontend después de un pago en MercadoPago."
+    "/redirect/success",
+    summary="Redirección post-pago exitoso",
+    description="Redirige al frontend después de un pago exitoso en MercadoPago. "
+    "Pasa los query params de MP (payment_id, external_reference, etc.) "
+    "al frontend para que cree el pedido.",
 )
-def redirect_after_payment(
-    pedido_id: int,
-    status: str,
-    request: Request = None,
-):
-    frontend_status = STATUS_MAP.get(status, "success")
-    url = f"{settings.VITE_FRONTEND_URL}/orders/{pedido_id}/{frontend_status}"
+def redirect_success(request: Request):
+    url = f"{settings.VITE_FRONTEND_URL}/orders/confirm"
+
+    # Filtrar query params (MP manda "null" como string)
     if request and request.query_params:
-        qs = "&".join(
-            f"{k}={v}" for k, v in request.query_params.items()
-            if k not in ("pedido_id", "status")
-        )
-        if qs:
-            url += f"?{qs}"
-    return RedirectResponse(url=url)
+        params = [
+            f"{k}={v}"
+            for k, v in request.query_params.items()
+            if v not in ("null", "None", "", "undefined")
+        ]
+        if params:
+            url += "?" + "&".join(params)
+
+    return RedirectResponse(url=url, status_code=302)
+
+
+@router.get(
+    "/redirect/cart",
+    summary="Redirección al carrito",
+    description="Redirige al carrito cuando el pago fue cancelado o el usuario volvió. "
+    "Sin autenticación — solo redirige, no muta estado.",
+)
+def redirect_cart():
+    url = f"{settings.VITE_FRONTEND_URL}/cart"
+    return RedirectResponse(url=url, status_code=302)
